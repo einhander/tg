@@ -41,6 +41,23 @@
     <div class="range-value">{{ processing_state.bins|default(1000) }}</div>
   </div>
 
+  <div class="checkbox compact-checkbox">
+    <label>
+      <input id="sg-mode"
+             name="sg_mode"
+             type="checkbox"
+             value="1"
+             {% if processing_state.sg_mode|default(False) %}checked{% endif %}>
+      Savitzky-Golay сглаживание
+    </label>
+  </div>
+
+  <div class="form-group compact-form-group sg-controls" id="sg-controls">
+    <label for="sg-window" class="control-label">SG Window</label>
+    <input id="sg-window" name="sg_window" type="range" min="3" max="51" step="2" value="{{ processing_state.sg_window|default(11) }}" class="form-control range-control">
+    <div class="range-value">{{ processing_state.sg_window|default(11) }}</div>
+  </div>
+
   <div class="form-group compact-form-group">
     <label for="mass-smoothing" class="control-label">Сглаживание массы</label>
     <input id="mass-smoothing" name="mass_smoothing" type="range" min="1" max="500" step="1" value="{{ processing_state.mass_smoothing|default(processing_state.masssmoothing|default(1)) }}" class="form-control range-control">

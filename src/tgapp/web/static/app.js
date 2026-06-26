@@ -180,6 +180,32 @@
     });
   }
 
+  function bindSgToggle(root) {
+    var scope = root || document;
+    var sgCheckbox = scope.querySelector("#sg-mode");
+    var sgControls = scope.querySelector("#sg-controls");
+
+    if (!sgCheckbox || !sgControls) {
+      return;
+    }
+
+    if (sgCheckbox.dataset.sgBound === "1") {
+      return;
+    }
+    sgCheckbox.dataset.sgBound = "1";
+
+    var update = function () {
+      if (sgCheckbox.checked) {
+        sgControls.classList.add("visible");
+      } else {
+        sgControls.classList.remove("visible");
+      }
+    };
+
+    sgCheckbox.addEventListener("change", update);
+    update();
+  }
+
   function bindVisibilityForm(root) {
     var scope = root || document;
     scope.querySelectorAll("#visibility-form").forEach(function (form) {
@@ -219,6 +245,7 @@
   function init(root) {
     bindTabs(root);
     bindRangeControls(root);
+    bindSgToggle(root);
     bindVisibilityForm(root);
     renderPlots(root);
   }

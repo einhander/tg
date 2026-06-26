@@ -7,7 +7,7 @@ import pandas as pd
 
 from tgapp.domain.models import CorrectionFile, PeakResult, ProcessingSettings, ThermogramFile, ThermogramProcessed
 from tgapp.domain.peaks import detect_peaks
-from tgapp.domain.smoothing import smooth_derivative, smooth_mass, smooth_temperature
+from tgapp.domain.smoothing import smooth_derivative, smooth_mass, smooth_mass_savitzky_golay, smooth_temperature
 from tgapp.domain.summary import build_heat_speed_text, build_summary
 from tgapp.domain.thermogram import combine_thermograms, compute_mean_correction, compute_mean_traces, resample_thermogram
 
@@ -73,6 +73,13 @@ def process_thermograms(
     adjusted_difflag = estimate_adjusted_difflag(resampled, settings.bins, settings.difflag)
 
     mean_frame = round_mean_frame(mean_frame)
+
+    # Apply Savitzky-Golay smoothing to mass BEFORE computing derivative
+    if settings.sg_mode:
+        mean_frame = smooth_mass_savitzky_golay(mean_frame, settings.sg_window, settings.sg_polyorder)
+    else:
+        mean_frame = smooth_mass(mean_frame, settings.mass_smoothing)
+
     mean_frame["dmdt"] = compute_dmdt_trace(mean_frame, adjusted_difflag, settings.bins)
 
     if settings.use_correction:
@@ -80,7 +87,6 @@ def process_thermograms(
         if correction_mean is not None and len(correction_mean) == len(mean_frame.index):
             mean_frame["deltatemp"] = mean_frame["deltatemp"].to_numpy(dtype=float) + correction_mean
 
-    mean_frame = smooth_mass(mean_frame, settings.mass_smoothing)
     mean_frame = smooth_temperature(mean_frame, settings.temp_smoothing)
     mean_frame = smooth_derivative(mean_frame, settings.span, settings.smooth_dmdt)
     mean_frame = round_mean_frame(mean_frame)

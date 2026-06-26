@@ -20,7 +20,7 @@ def _as_bool(value: str | None) -> bool:
 
 
 HIDE_KEYS = {"hide_tg", "hide_dta", "hide_dtg", "hide_peaks_dta", "hide_peaks_dmdt"}
-BOOL_KEYS = {"use_correction", "smooth_dmdt"} | HIDE_KEYS
+BOOL_KEYS = {"use_correction", "smooth_dmdt", "sg_mode"} | HIDE_KEYS
 
 
 def _build_settings(current: dict[str, Any], form: dict[str, str | None]) -> ProcessingSettings:
@@ -31,7 +31,7 @@ def _build_settings(current: dict[str, Any], form: dict[str, str | None]) -> Pro
             continue
         if key in BOOL_KEYS:
             base[key] = _as_bool(value if isinstance(value, str) else None)
-        elif key in {"bins", "mass_smoothing", "temp_smoothing", "difflag"}:
+        elif key in {"bins", "mass_smoothing", "temp_smoothing", "difflag", "sg_window", "sg_polyorder"}:
             base[key] = int(cast(str, value))
         elif key in {"init_mass", "span"}:
             base[key] = float(cast(str, value))
@@ -45,7 +45,7 @@ def _build_settings(current: dict[str, Any], form: dict[str, str | None]) -> Pro
 
 
 @router.post("/process")
-async def process(request: Request, response: Response, init_mass: str | None = Form(None), bins: str | None = Form(None), mass_smoothing: str | None = Form(None), temp_smoothing: str | None = Form(None), difflag: str | None = Form(None), span: str | None = Form(None), use_correction: str | None = Form(None), smooth_dmdt: str | None = Form(None), hide_tg: str | None = Form(None), hide_dta: str | None = Form(None), hide_dtg: str | None = Form(None), hide_peaks_dta: str | None = Form(None), hide_peaks_dmdt: str | None = Form(None)):
+async def process(request: Request, response: Response, init_mass: str | None = Form(None), bins: str | None = Form(None), mass_smoothing: str | None = Form(None), temp_smoothing: str | None = Form(None), difflag: str | None = Form(None), span: str | None = Form(None), use_correction: str | None = Form(None), smooth_dmdt: str | None = Form(None), sg_mode: str | None = Form(None), sg_window: str | None = Form(None), sg_polyorder: str | None = Form(None), hide_tg: str | None = Form(None), hide_dta: str | None = Form(None), hide_dtg: str | None = Form(None), hide_peaks_dta: str | None = Form(None), hide_peaks_dmdt: str | None = Form(None)):
     session_state = get_or_create_session_state(request, response)
     existing_processing = get_processing_state(request, session_state)
     form_values: dict[str, str | None] = {
@@ -57,6 +57,9 @@ async def process(request: Request, response: Response, init_mass: str | None = 
         "span": span,
         "use_correction": use_correction,
         "smooth_dmdt": smooth_dmdt,
+        "sg_mode": sg_mode,
+        "sg_window": sg_window,
+        "sg_polyorder": sg_polyorder,
         "hide_tg": hide_tg,
         "hide_dta": hide_dta,
         "hide_dtg": hide_dtg,

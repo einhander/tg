@@ -11,6 +11,58 @@ def smooth_mass(frame: pd.DataFrame, window: int) -> pd.DataFrame:
     return smoothed
 
 
+def smooth_mass_savitzky_golay(frame: pd.DataFrame, window: int, polyorder: int) -> pd.DataFrame:
+    """Apply Savitzky-Golay filter to mass column. Preserves peak shapes for clean derivatives."""
+    smoothed = frame.copy()
+    if "mass" not in smoothed.columns or smoothed.empty:
+        return smoothed
+
+    mass = smoothed["mass"].to_numpy(dtype=float)
+    n = len(mass)
+
+    # Window must be odd and > polyorder
+    win = max(window, 3)
+    if win % 2 == 0:
+        win += 1
+    if win > n:
+        win = n if n % 2 == 1 else n - 1
+    if win < 3:
+        return smoothed
+
+    pord = min(max(polyorder, 1), win - 2)
+
+    try:
+        from scipy.signal import savgol_filter
+        smoothed["mass"] = savgol_filter(mass, win, pord)
+    except ImportError:
+        # Fallback: weighted polynomial fit per window
+        smoothed["mass"] = _savgol_fallback(mass, win, pord)
+    except ValueError:
+        pass
+
+    return smoothed
+
+
+def _savgol_fallback(y: np.ndarray, window: int, polyorder: int) -> np.ndarray:
+    """Manual Savitzky-Golay when scipy is unavailable."""
+    n = len(y)
+    result = y.copy()
+    half = window // 2
+
+    for i in range(n):
+        lo = max(0, i - half)
+        hi = min(n, i + half + 1)
+        x = np.arange(hi - lo, dtype=float)
+        segment = y[lo:hi]
+        try:
+            coeffs = np.polyfit(x, segment, polyorder)
+            result[i] = np.polyval(coeffs, x[len(segment) // 2])
+        except np.linalg.LinAlgError:
+            result[i] = y[i]
+
+    return result
+
+
 def smooth_temperature(frame: pd.DataFrame, window: int) -> pd.DataFrame:
     smoothed = frame.copy()
     if "temp" in smoothed.columns and not smoothed.empty and window > 1:
