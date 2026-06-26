@@ -180,9 +180,46 @@
     });
   }
 
+  function bindVisibilityForm(root) {
+    var scope = root || document;
+    scope.querySelectorAll("#visibility-form").forEach(function (form) {
+      if (form.dataset.visibilityBound === "1") {
+        return;
+      }
+      form.dataset.visibilityBound = "1";
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+
+        var processForm = document.getElementById("process-form");
+        if (!processForm) {
+          return;
+        }
+
+        var hideFields = form.querySelectorAll("input[name^='hide_']");
+        var tempInputs = [];
+        hideFields.forEach(function (input) {
+          var hidden = document.createElement("input");
+          hidden.type = "hidden";
+          hidden.name = input.name;
+          hidden.value = input.checked ? "1" : "0";
+          processForm.appendChild(hidden);
+          tempInputs.push(hidden);
+        });
+
+        processForm.requestSubmit();
+
+        setTimeout(function () {
+          tempInputs.forEach(function (el) { el.remove(); });
+        }, 500);
+      });
+    });
+  }
+
   function init(root) {
     bindTabs(root);
     bindRangeControls(root);
+    bindVisibilityForm(root);
     renderPlots(root);
   }
 

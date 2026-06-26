@@ -19,18 +19,28 @@ def _as_bool(value: str | None) -> bool:
     return str(value).lower() in {"1", "true", "on", "yes"}
 
 
+HIDE_KEYS = {"hide_tg", "hide_dta", "hide_dtg", "hide_peaks_dta", "hide_peaks_dmdt"}
+BOOL_KEYS = {"use_correction", "smooth_dmdt"} | HIDE_KEYS
+
+
 def _build_settings(current: dict[str, Any], form: dict[str, str | None]) -> ProcessingSettings:
     current_settings = ProcessingSettings(**current) if current else ProcessingSettings()
     base = asdict(current_settings)
     for key, value in form.items():
         if value is None or value == "":
             continue
-        if key in {"use_correction", "smooth_dmdt", "hide_tg", "hide_dta", "hide_dtg", "hide_peaks_dta", "hide_peaks_dmdt"}:
+        if key in BOOL_KEYS:
             base[key] = _as_bool(value if isinstance(value, str) else None)
         elif key in {"bins", "mass_smoothing", "temp_smoothing", "difflag"}:
             base[key] = int(cast(str, value))
         elif key in {"init_mass", "span"}:
             base[key] = float(cast(str, value))
+    # Unchecked checkboxes send nothing; reset missing hide keys to False
+    # when any hide key is present (means visibility form was submitted)
+    if any(key in form and form[key] is not None for key in HIDE_KEYS):
+        for key in HIDE_KEYS:
+            if form[key] is None:
+                base[key] = False
     return ProcessingSettings(**cast(dict[str, Any], base))
 
 

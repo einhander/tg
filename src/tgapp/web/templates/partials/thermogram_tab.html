@@ -9,12 +9,12 @@
 
       <form id="visibility-form" class="visibility-form">
         <div class="visibility-grid">
-          <label class="visibility-item"><input id="hide-tg" name="hide_tg" type="checkbox" value="1" form="process-form" {% if processing_state.hide_tg|default(False) %}checked{% endif %}> ТГ</label>
-          <label class="visibility-item"><input id="hide-dta" name="hide_dta" type="checkbox" value="1" form="process-form" {% if processing_state.hide_dta|default(False) %}checked{% endif %}> ДТА</label>
-          <label class="visibility-item"><input id="hide-dtg" name="hide_dtg" type="checkbox" value="1" form="process-form" {% if processing_state.hide_dtg|default(processing_state.hide_dmdt|default(False)) %}checked{% endif %}> ТГП</label>
-          <label class="visibility-item"><input id="hide-peaks-dta" name="hide_peaks_dta" type="checkbox" value="1" form="process-form" {% if processing_state.hide_peaks_dta|default(False) %}checked{% endif %}> Пики ДТА</label>
-          <label class="visibility-item"><input id="hide-peaks-dmdt" name="hide_peaks_dmdt" type="checkbox" value="1" form="process-form" {% if processing_state.hide_peaks_dmdt|default(False) %}checked{% endif %}> Пики dmdt</label>
-          <button type="submit" class="btn btn-default btn-compact-inline" form="process-form">Обновить</button>
+         <label class="visibility-item"><input id="hide-tg" name="hide_tg" type="checkbox" value="1" {% if processing_state.hide_tg|default(False) %}checked{% endif %}> ТГ</label>
+           <label class="visibility-item"><input id="hide-dta" name="hide_dta" type="checkbox" value="1" {% if processing_state.hide_dta|default(False) %}checked{% endif %}> ДТА</label>
+           <label class="visibility-item"><input id="hide-dtg" name="hide_dtg" type="checkbox" value="1" {% if processing_state.hide_dtg|default(processing_state.hide_dmdt|default(False)) %}checked{% endif %}> ТГП</label>
+           <label class="visibility-item"><input id="hide-peaks-dta" name="hide_peaks_dta" type="checkbox" value="1" {% if processing_state.hide_peaks_dta|default(False) %}checked{% endif %}> Пики ДТА</label>
+           <label class="visibility-item"><input id="hide-peaks-dmdt" name="hide_peaks_dmdt" type="checkbox" value="1" {% if processing_state.hide_peaks_dmdt|default(False) %}checked{% endif %}> Пики dmdt</label>
+          <button type="submit" class="btn btn-default btn-compact-inline">Обновить</button>
         </div>
       </form>
 
