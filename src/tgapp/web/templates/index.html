@@ -6,28 +6,42 @@
     <h1>Предобработка дериватограммы</h1>
   </div>
 
-  <div class="main-panel workspace-shell">
-    <ul class="nav nav-tabs app-tabs" role="tablist">
-      <li class="active" role="presentation">
-        <a href="#tab-settings" class="tab-link" data-tab-target="tab-settings">Настройки</a>
-      </li>
-      <li role="presentation">
-        <a href="#tab-mixchar" class="tab-link" data-tab-target="tab-mixchar">Деконволюция</a>
-      </li>
-      <li role="presentation">
-        <a href="#tab-debug" class="tab-link" data-tab-target="tab-debug">Debug</a>
-      </li>
-    </ul>
+  <div class="app-layout">
+    <div class="app-upload-column">
+      {% include "partials/upload_block.html" %}
+    </div>
 
-    <div class="tab-content app-tab-content">
-      <div id="tab-settings" class="tab-pane active" role="tabpanel">
-        {% include "partials/thermogram_tab.html" %}
-      </div>
-      <div id="tab-mixchar" class="tab-pane" role="tabpanel">
-        {% include "partials/mixchar_tab.html" %}
-      </div>
-      <div id="tab-debug" class="tab-pane" role="tabpanel">
-        {% include "partials/summary_tab.html" %}
+    <div class="app-main-column">
+      <div class="main-panel workspace-shell">
+        <ul class="nav nav-tabs app-tabs" role="tablist">
+          <li class="active" role="presentation">
+            <a href="#tab-settings" class="tab-link" data-tab-target="tab-settings">Настройки</a>
+          </li>
+          <li role="presentation">
+            <a href="#tab-tga2" class="tab-link" data-tab-target="tab-tga2">TGA2</a>
+          </li>
+          <li role="presentation">
+            <a href="#tab-mixchar" class="tab-link" data-tab-target="tab-mixchar">Деконволюция</a>
+          </li>
+          <li role="presentation">
+            <a href="#tab-debug" class="tab-link" data-tab-target="tab-debug">Debug</a>
+          </li>
+        </ul>
+
+        <div class="tab-content app-tab-content">
+          <div id="tab-settings" class="tab-pane active" role="tabpanel">
+            {% include "partials/thermogram_tab.html" %}
+          </div>
+          <div id="tab-tga2" class="tab-pane" role="tabpanel">
+            {% include "partials/tga2_tab.html" %}
+          </div>
+          <div id="tab-mixchar" class="tab-pane" role="tabpanel">
+            {% include "partials/mixchar_tab.html" %}
+          </div>
+          <div id="tab-debug" class="tab-pane" role="tabpanel">
+            {% include "partials/summary_tab.html" %}
+          </div>
+        </div>
       </div>
     </div>
   </div>

@@ -1,0 +1,49 @@
+<div class="compact-panel compact-panel-section upload-panel">
+  <div class="compact-panel-title">Файлы</div>
+
+  <form id="thermogram-upload-form"
+      class="form-group compact-form-group"
+      method="post"
+      action="{{ upload_thermograms_url }}"
+      enctype="multipart/form-data"
+      hx-post="{{ upload_thermograms_url }}"
+      hx-encoding="multipart/form-data"
+      hx-target="#upload-response"
+      hx-swap="innerHTML">
+    <label for="thermogramm" class="control-label">Файл термограммы</label>
+    <input id="thermogramm" name="thermogramm" type="file" class="form-control" multiple>
+    <button type="submit" class="btn btn-default btn-sm-block">Загрузить</button>
+  </form>
+
+  <form id="session-upload-form"
+      class="form-group compact-form-group"
+      method="post"
+      action="{{ upload_session_url }}"
+      enctype="multipart/form-data"
+      hx-post="{{ upload_session_url }}"
+      hx-encoding="multipart/form-data"
+      hx-target="#upload-response"
+      hx-swap="innerHTML">
+    <label for="data" class="control-label">Файл tg</label>
+    <input id="data" name="data" type="file" class="form-control" accept=".tg,.rds,.bin,.dat">
+    <button type="submit" class="btn btn-default btn-sm-block">Загрузить</button>
+  </form>
+
+  <form id="correction-upload-form"
+      class="compact-form-group"
+      method="post"
+      action="{{ upload_correction_url }}"
+      enctype="multipart/form-data"
+      hx-post="{{ upload_correction_url }}"
+      hx-encoding="multipart/form-data"
+      hx-target="#upload-response"
+      hx-swap="innerHTML">
+    <label for="correction" class="control-label">Файл коррекции температуры</label>
+    <input id="correction" name="correction" type="file" class="form-control">
+    <button type="submit" class="btn btn-default btn-sm-block">Загрузить коррекцию</button>
+  </form>
+
+  {% include "partials/upload_status_block.html" %}
+</div>
+
+<div id="upload-response" class="hidden"></div>
