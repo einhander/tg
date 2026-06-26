@@ -1,0 +1,37 @@
+<div class="summary-tab debug-workspace">
+  <div class="debug-column debug-column-main">
+    <div class="compact-panel debug-panel">
+      <div class="compact-panel-title">Summary</div>
+      {% include "partials/summary_block.html" %}
+    </div>
+  </div>
+
+  <div class="debug-column debug-column-side">
+    <div class="compact-panel debug-panel">
+      <div class="compact-panel-title">Служебная информация</div>
+      <dl class="debug-list">
+        <dt>Скорость нагрева</dt>
+        <dd>{{ heat_speed_text|default('Скорость нагрева: недоступна') }}</dd>
+
+        <dt>Статус загрузки</dt>
+        <dd>{{ upload_status_text|default('Нет сообщений') }}</dd>
+
+        <dt>Эффект</dt>
+        <dd>{{ effect_text|default('Тепловой эффект: выделите температурный интервал') }}</dd>
+
+        <dt>Session ID</dt>
+        <dd>{{ session_state.session_id|default(session_state.id|default('—')) }}</dd>
+      </dl>
+    </div>
+
+    <div class="compact-panel debug-panel">
+      <div class="compact-panel-title">Состояние сессии</div>
+      <pre class="summary-output debug-pre">{{ session_state|default({}) }}</pre>
+    </div>
+
+    <div class="compact-panel debug-panel">
+      <div class="compact-panel-title">Состояние обработки</div>
+      <pre class="summary-output debug-pre">{{ processing_state|default({}) }}</pre>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,23 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual env
+.venv/
+
+# Session data
+.session-data/
+
+# Deepwork progress
+.slim/deepwork/
+
+# Playwright artifacts
+.playwright-mcp/
+
+# Lock files
+uv.lock
+
+# Misc
+*.png
+*.log

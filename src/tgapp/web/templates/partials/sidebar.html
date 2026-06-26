@@ -1,0 +1,132 @@
+<div class="settings-panel">
+  <div class="compact-panel compact-panel-section upload-panel">
+    <div class="compact-panel-title">Файлы</div>
+
+    <form id="thermogram-upload-form"
+        class="form-group compact-form-group"
+        method="post"
+        action="{{ upload_thermograms_url }}"
+        enctype="multipart/form-data"
+        hx-post="{{ upload_thermograms_url }}"
+        hx-encoding="multipart/form-data"
+        hx-target="#process-response"
+        hx-swap="innerHTML">
+      <label for="thermogramm" class="control-label">Файл термограммы</label>
+      <input id="thermogramm" name="thermogramm" type="file" class="form-control" multiple>
+      <button type="submit" class="btn btn-default btn-sm-block">Загрузить</button>
+    </form>
+
+    <form id="session-upload-form"
+        class="form-group compact-form-group"
+        method="post"
+        action="{{ upload_session_url }}"
+        enctype="multipart/form-data"
+        hx-post="{{ upload_session_url }}"
+        hx-encoding="multipart/form-data"
+        hx-target="#process-response"
+        hx-swap="innerHTML">
+      <label for="data" class="control-label">Файл tg</label>
+      <input id="data" name="data" type="file" class="form-control" accept=".tg,.rds,.bin,.dat">
+      <button type="submit" class="btn btn-default btn-sm-block">Загрузить</button>
+    </form>
+
+    <form id="correction-upload-form"
+        class="compact-form-group"
+        method="post"
+        action="{{ upload_correction_url }}"
+        enctype="multipart/form-data"
+        hx-post="{{ upload_correction_url }}"
+        hx-encoding="multipart/form-data"
+        hx-target="#process-response"
+        hx-swap="innerHTML">
+      <label for="correction" class="control-label">Файл коррекции температуры</label>
+      <input id="correction" name="correction" type="file" class="form-control">
+      <button type="submit" class="btn btn-default btn-sm-block">Загрузить коррекцию</button>
+    </form>
+
+    {% include "partials/upload_status_block.html" %}
+  </div>
+
+  <form id="process-form"
+        class="compact-panel compact-panel-section settings-form"
+        method="post"
+        action="{{ process_url }}"
+        hx-post="{{ process_url }}"
+        hx-target="#process-response"
+        hx-swap="innerHTML">
+    <div class="compact-panel-title">Параметры</div>
+
+    <div class="form-grid-two">
+      <div class="form-group compact-form-group">
+      <label for="init-mass" class="control-label">Начальная масса</label>
+      <input id="init-mass"
+             name="init_mass"
+             type="number"
+             step="any"
+             class="form-control"
+             value="{{ session_state.init_mass|default(session_state.initmass|default(1.0)) }}">
+      </div>
+
+      <div class="form-group compact-form-group checkbox-compact-field">
+        <label class="control-label compact-empty-label">&nbsp;</label>
+        <div class="checkbox compact-checkbox">
+          <label>
+            <input id="use-correction"
+                   name="use_correction"
+                   type="checkbox"
+                   value="1"
+                   {% if processing_state.use_correction|default(processing_state.usecorr|default(False)) %}checked{% endif %}>
+            Использовать коррекцию
+          </label>
+        </div>
+      </div>
+    </div>
+
+    {% include "partials/heat_speed_block.html" %}
+
+    <div class="form-group compact-form-group">
+      <label for="bins" class="control-label">Bins</label>
+      <input id="bins" name="bins" type="range" min="1" max="2000" step="1" value="{{ processing_state.bins|default(1000) }}" class="form-control range-control">
+      <div class="range-value">{{ processing_state.bins|default(1000) }}</div>
+    </div>
+
+    <div class="form-group compact-form-group">
+      <label for="mass-smoothing" class="control-label">Сглаживание массы</label>
+      <input id="mass-smoothing" name="mass_smoothing" type="range" min="1" max="500" step="1" value="{{ processing_state.mass_smoothing|default(processing_state.masssmoothing|default(1)) }}" class="form-control range-control">
+      <div class="range-value">{{ processing_state.mass_smoothing|default(processing_state.masssmoothing|default(1)) }}</div>
+    </div>
+
+    <div class="form-group compact-form-group">
+      <label for="temp-smoothing" class="control-label">Сглаживание температуры</label>
+      <input id="temp-smoothing" name="temp_smoothing" type="range" min="1" max="100" step="1" value="{{ processing_state.temp_smoothing|default(processing_state.tempsmoothing|default(1)) }}" class="form-control range-control">
+      <div class="range-value">{{ processing_state.temp_smoothing|default(processing_state.tempsmoothing|default(1)) }}</div>
+    </div>
+
+    <div class="form-group compact-form-group">
+      <label for="difflag" class="control-label">Difflag</label>
+      <input id="difflag" name="difflag" type="range" min="1" max="100" step="1" value="{{ processing_state.difflag|default(1) }}" class="form-control range-control">
+      <div class="range-value">{{ processing_state.difflag|default(1) }}</div>
+    </div>
+
+    <div class="checkbox compact-checkbox">
+      <label>
+        <input id="smooth-dmdt"
+               name="smooth_dmdt"
+               type="checkbox"
+               value="1"
+               {% if processing_state.smooth_dmdt|default(processing_state.smoothdmdt|default(False)) %}checked{% endif %}>
+        Сглаживать dmdt
+      </label>
+    </div>
+
+    <div class="form-group compact-form-group compact-form-group-last">
+      <label for="span" class="control-label">Span</label>
+      <input id="span" name="span" type="range" min="1" max="100" step="1" value="{{ processing_state.span|default(91) }}" class="form-control range-control">
+      <div class="range-value">{{ processing_state.span|default(91) }}</div>
+    </div>
+
+    <div class="form-actions compact-actions">
+      <button type="submit" class="btn btn-primary">Обработать</button>
+    </div>
+  </form>
+</div>

@@ -1,0 +1,4 @@
+<div id="heat-speed-block" class="form-group heat-speed-block" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <label class="control-label">Скорость нагрева</label>
+  <div id="heat-speed-output" class="help-block status-text">{{ heat_speed_text|default('Данные еще не загружены') }}</div>
+</div>

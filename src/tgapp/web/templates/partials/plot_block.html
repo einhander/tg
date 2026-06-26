@@ -1,0 +1,10 @@
+{% set plot_json = plot_payload_json|default(main_plot_json|default(plot_json|default('{}'))) %}
+{% set plot_height = plot_height|default('600px') %}
+<div id="plot-block" class="plot-shell" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <div id="main-plot"
+       class="main-plot"
+       data-plot-json='{{ plot_json|e }}'
+       data-effect-url="{{ effect_url }}"
+       data-plot-height="{{ plot_height }}"
+       data-session-id="{{ session_state.session_id|default(session_state.id|default('')) }}"></div>
+</div>

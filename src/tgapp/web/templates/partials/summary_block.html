@@ -1,0 +1,16 @@
+<div id="summary-block" class="summary-block" {% if oob %}hx-swap-oob="true"{% endif %}>
+  {% set lines = summary_lines|default([]) %}
+  {% set metrics = summary_metrics|default({}) %}
+
+  {% if metrics %}
+    <dl class="dl-horizontal summary-metrics">
+      {% for key, value in metrics.items() %}
+        <dt>{{ key }}</dt>
+        <dd>{{ value }}</dd>
+      {% endfor %}
+    </dl>
+  {% endif %}
+
+  <pre id="summary-output" class="summary-output">{% if lines %}{% for line in lines %}{{ line }}{% if not loop.last %}
+{% endif %}{% endfor %}{% else %}Ожидание загрузки данных...{% endif %}</pre>
+</div>

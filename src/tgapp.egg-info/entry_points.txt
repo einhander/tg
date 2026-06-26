@@ -1,0 +1,2 @@
+[console_scripts]
+tgapp = tgapp.main:main

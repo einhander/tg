@@ -1,0 +1,3 @@
+<div id="upload-status-block" class="upload-status-block" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <div id="upload-status" class="help-block status-text">{{ upload_status_text|default('') }}</div>
+</div>
