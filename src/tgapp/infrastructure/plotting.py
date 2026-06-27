@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import json
-import logging
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go  # pyright: ignore[reportMissingImports]
 
 from tgapp.application.dto import PlotPayload
-
-logger = logging.getLogger(__name__)
 from tgapp.domain.models import Tga2PlotSettings
 from tgapp.domain.processing import compute_dmdt_trace
 from tgapp.domain.smoothing import smooth_mass_savitzky_golay
@@ -18,6 +15,9 @@ from tgapp.infrastructure.serialization import _json_safe
 
 DTG_PLOT_SCALE = 200.0
 PLOT_TITLE = "Термограмма"
+TG_TRACE_COLOR = "#009E73"
+DTA_TRACE_COLOR = "#E69F00"
+DTG_TRACE_COLOR = "#56B4E9"
 
 
 def _finite_range(series: pd.Series) -> float:
@@ -51,12 +51,13 @@ def build_main_plot(payload: PlotPayload) -> go.Figure:
                     y=frame["mass"] * mass_scale,
                     mode="lines",
                     name="ТГ",
+                    line={"color": TG_TRACE_COLOR},
                     customdata=frame[["mass"]].to_numpy(),
                     hovertemplate="Температура=%{x}<br>ТГ (масштаб)=%{y}<br>Масса=%{customdata[0]}<extra></extra>",
                 )
             )
         if not settings.get("hide_dta", False) and {"temp", "deltatemp"}.issubset(frame.columns):
-            figure.add_trace(go.Scatter(x=frame["temp"], y=frame["deltatemp"], mode="lines", name="ДТА"))
+            figure.add_trace(go.Scatter(x=frame["temp"], y=frame["deltatemp"], mode="lines", name="ДТА", line={"color": DTA_TRACE_COLOR}))
         if not settings.get("hide_dtg", False):
             dtg_col = "dmdt"
             if {"temp", dtg_col}.issubset(frame.columns):
@@ -66,6 +67,7 @@ def build_main_plot(payload: PlotPayload) -> go.Figure:
                         y=frame[dtg_col] * DTG_PLOT_SCALE,
                         mode="lines",
                         name="ТГП",
+                        line={"color": DTG_TRACE_COLOR},
                         customdata=frame[[dtg_col]].to_numpy(),
                         hovertemplate="Температура=%{x}<br>ТГП (масштаб)=%{y}<br>ТГП=%{customdata[0]}<extra></extra>",
                     )
@@ -82,7 +84,7 @@ def build_main_plot(payload: PlotPayload) -> go.Figure:
         peak_y = float(peak.get("y", 0.0))
         if peak_kind == "dtg":
             peak_y *= DTG_PLOT_SCALE
-        color = "#E69F00" if peak_kind == "dta" else "#56B4E9"
+        color = DTA_TRACE_COLOR if peak_kind == "dta" else DTG_TRACE_COLOR
         symbol = "triangle-up" if extremum == "peak" else "triangle-down"
         text_position = "top center" if extremum == "peak" else "bottom center"
 
@@ -158,13 +160,14 @@ def build_raw_plot(frame: pd.DataFrame, settings: Tga2PlotSettings | None = None
                 y=plot_frame["mass"] * mass_scale,
                 mode="lines",
                 name="ТГ",
+                line={"color": TG_TRACE_COLOR},
                 yaxis="y2",
                 customdata=plot_frame[["mass"]].to_numpy(),
                 hovertemplate="Температура=%{x}<br>Масса=%{customdata[0]}<extra></extra>",
             )
         )
     if not plot_settings.hide_dta and not plot_frame.empty and {"temp", "deltatemp"}.issubset(plot_frame.columns):
-        figure.add_trace(go.Scatter(x=plot_frame["temp"], y=plot_frame["deltatemp"], mode="lines", name="ДТА"))
+        figure.add_trace(go.Scatter(x=plot_frame["temp"], y=plot_frame["deltatemp"], mode="lines", name="ДТА", line={"color": DTA_TRACE_COLOR}))
 
     # Compute and add DTG trace from mass/time derivative
     if not plot_settings.hide_dtg and not plot_frame.empty and {"temp", "mass", "time"}.issubset(plot_frame.columns):
@@ -179,6 +182,7 @@ def build_raw_plot(frame: pd.DataFrame, settings: Tga2PlotSettings | None = None
                     y=dmdt_arr * DTG_PLOT_SCALE,
                     mode="lines",
                     name="ТГП",
+                    line={"color": DTG_TRACE_COLOR},
                     customdata=dmdt_arr.reshape(-1, 1),
                     hovertemplate="Температура=%{x}<br>ТГП (масштаб)=%{y}<br>ТГП=%{customdata[0]}<extra></extra>",
                 )
@@ -238,6 +242,8 @@ def figure_to_json(figure: go.Figure) -> str:
             trace_dict["customdata"] = trace.customdata.tolist() if isinstance(trace.customdata, np.ndarray) else list(trace.customdata)
         if hasattr(trace, "hovertemplate") and trace.hovertemplate:
             trace_dict["hovertemplate"] = trace.hovertemplate
+        if hasattr(trace, "line") and trace.line:
+            trace_dict["line"] = _convert(trace.line.to_plotly_json())
         if hasattr(trace, "marker") and trace.marker:
             trace_dict["marker"] = _convert(trace.marker.to_plotly_json())
         if hasattr(trace, "text") and trace.text:
