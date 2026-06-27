@@ -53,7 +53,6 @@ async def upload_thermograms(request: Request, response: Response):
     tga2_settings = get_tga2_settings(request, session_state)
     raw_thermograms = storage.load_raw_thermograms(session_state.get("session_id") or "")
     first_frame = next(iter(raw_thermograms.values()), pd.DataFrame())
-    import logging; logging.getLogger("tgapp").info(f"DEBUG: frame columns={list(first_frame.columns)}, shape={first_frame.shape}, hide_tg={tga2_settings.get('hide_tg')}")
     raw_plot_json = figure_to_json(build_raw_plot(first_frame, Tga2PlotSettings(**tga2_settings)))
     context = page_context(
         request=request,
