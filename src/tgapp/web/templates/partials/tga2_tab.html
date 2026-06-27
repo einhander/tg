@@ -33,9 +33,19 @@
       </div>
 
       <div class="visibility-grid">
-        <label class="visibility-item"><input name="hide_tg" type="checkbox" value="1" {% if tga2_settings.hide_tg|default(False) %}checked{% endif %}> ТГ</label>
-        <label class="visibility-item"><input name="hide_dta" type="checkbox" value="1" {% if tga2_settings.hide_dta|default(False) %}checked{% endif %}> ДТА</label>
-        <label class="visibility-item"><input name="hide_dtg" type="checkbox" value="1" {% if tga2_settings.hide_dtg|default(False) %}checked{% endif %}> ТГП</label>
+        <input type="hidden" name="show_tg" value="{{ 0 if tga2_settings.hide_tg|default(False) else 1 }}" data-visibility-hidden="show_tg">
+        <input type="hidden" name="show_dta" value="{{ 0 if tga2_settings.hide_dta|default(False) else 1 }}" data-visibility-hidden="show_dta">
+        <input type="hidden" name="show_dtg" value="{{ 0 if tga2_settings.hide_dtg|default(False) else 1 }}" data-visibility-hidden="show_dtg">
+
+        <label class="visibility-item">
+          <input type="checkbox" {% if not tga2_settings.hide_tg|default(False) %}checked{% endif %} data-visibility-toggle="show_tg"> ТГ
+        </label>
+        <label class="visibility-item">
+          <input type="checkbox" {% if not tga2_settings.hide_dta|default(False) %}checked{% endif %} data-visibility-toggle="show_dta"> ДТА
+        </label>
+        <label class="visibility-item">
+          <input type="checkbox" {% if not tga2_settings.hide_dtg|default(False) %}checked{% endif %} data-visibility-toggle="show_dtg"> ТГП
+        </label>
         <button type="submit" class="btn btn-default btn-compact-inline">Обновить</button>
       </div>
     </form>

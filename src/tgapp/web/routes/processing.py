@@ -46,7 +46,13 @@ def _build_settings(current: dict[str, Any], form: dict[str, str | None]) -> Pro
 
 
 TGA2_HIDE_KEYS = {"hide_tg", "hide_dta", "hide_dtg"}
-TGA2_BOOL_KEYS = {"sg_mode"} | TGA2_HIDE_KEYS
+# TGA2 UI submits positive show_* flags; persisted/settings model stays hide_*.
+TGA2_SHOW_TO_HIDE = {
+    "show_tg": "hide_tg",
+    "show_dta": "hide_dta",
+    "show_dtg": "hide_dtg",
+}
+TGA2_BOOL_KEYS = {"sg_mode"}
 
 
 def _build_tga2_settings(current: dict[str, Any], form: dict[str, str | None]) -> Tga2PlotSettings:
@@ -64,17 +70,14 @@ def _build_tga2_settings(current: dict[str, Any], form: dict[str, str | None]) -
             continue
         if key in TGA2_BOOL_KEYS:
             base[key] = _as_bool(value if isinstance(value, str) else None)
+        elif key in TGA2_SHOW_TO_HIDE:
+            base[TGA2_SHOW_TO_HIDE[key]] = not _as_bool(value if isinstance(value, str) else None)
         elif key in {"sg_mass_window", "sg_temp_window"}:
             base[key] = int(cast(str, value))
         # Backward compat: old sg_window maps to both new windows
         elif key == "sg_window":
             base["sg_mass_window"] = int(cast(str, value))
             base["sg_temp_window"] = int(cast(str, value))
-    # Reset unchecked hide keys to False when visibility form submitted
-    if any(key in form and form[key] is not None for key in TGA2_HIDE_KEYS):
-        for key in TGA2_HIDE_KEYS:
-            if form[key] is None:
-                base[key] = False
     return Tga2PlotSettings(**cast(dict[str, Any], base))
 
 
@@ -118,12 +121,21 @@ async def process(request: Request, response: Response, init_mass: str | None = 
 
 
 @router.post("/tga2/plot", name="update_tga2_plot")
-async def update_tga2_plot(request: Request, response: Response, sg_mode: str | None = Form(None), sg_mass_window: str | None = Form(None), sg_temp_window: str | None = Form(None), hide_tg: str | None = Form(None), hide_dta: str | None = Form(None), hide_dtg: str | None = Form(None)):
+async def update_tga2_plot(request: Request, response: Response, sg_mode: str | None = Form(None), sg_mass_window: str | None = Form(None), sg_temp_window: str | None = Form(None), show_tg: str | None = Form(None), show_dta: str | None = Form(None), show_dtg: str | None = Form(None)):
     session_state = get_or_create_session_state(request, response)
     storage = get_storage(request)
     session_id = session_state.get("session_id")
-    settings = _build_tga2_settings(get_tga2_settings(request, session_state), {"sg_mode": sg_mode, "sg_mass_window": sg_mass_window, "sg_temp_window": sg_temp_window, "hide_tg": hide_tg, "hide_dta": hide_dta, "hide_dtg": hide_dtg})
-
+    settings = _build_tga2_settings(
+        get_tga2_settings(request, session_state),
+        {
+            "sg_mode": sg_mode,
+            "sg_mass_window": sg_mass_window,
+            "sg_temp_window": sg_temp_window,
+            "show_tg": show_tg,
+            "show_dta": show_dta,
+            "show_dtg": show_dtg,
+        },
+    )
     if isinstance(session_id, str) and session_id:
         storage.save_json(storage.tga2_settings_path(session_id), asdict(settings))
 

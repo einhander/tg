@@ -254,11 +254,39 @@
     });
   }
 
+  function bindVisibilityToggles(root) {
+    var scope = root || document;
+    scope.querySelectorAll("form input[data-visibility-toggle]").forEach(function (checkbox) {
+      if (checkbox.dataset.visibilityToggleBound === "1") {
+        return;
+      }
+      checkbox.dataset.visibilityToggleBound = "1";
+
+      var fieldName = checkbox.getAttribute("data-visibility-toggle");
+      var form = checkbox.form || checkbox.closest("form");
+      if (!form) {
+        return;
+      }
+      var hidden = form.querySelector("input[type='hidden'][data-visibility-hidden='" + fieldName + "']");
+      if (!hidden) {
+        return;
+      }
+
+      var sync = function () {
+        hidden.value = checkbox.checked ? "1" : "0";
+      };
+
+      checkbox.addEventListener("change", sync);
+      sync();
+    });
+  }
+
   function init(root) {
     bindTabs(root);
     bindRangeControls(root);
     bindSgToggle(root);
     bindVisibilityForm(root);
+    bindVisibilityToggles(root);
     renderPlots(root);
   }
 
