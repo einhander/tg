@@ -47,7 +47,9 @@ def load_thermograms(
 ) -> SessionStateDto:
     session_id = _require_session_id(session_state, storage)
     parsed = parse_thermogram_uploads(uploads)
-    filenames = storage.save_thermograms(session_id, {f"thermogram_{index + 1}.csv": item.frame for index, item in enumerate(parsed)})
+    frames = {f"thermogram_{index + 1}.csv": item.frame for index, item in enumerate(parsed)}
+    filenames = storage.save_thermograms(session_id, frames)
+    storage.save_raw_thermograms(session_id, frames)
     metadata = {
         "original_names": [item.name for item in parsed],
         "status": "thermograms-loaded",

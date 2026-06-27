@@ -191,17 +191,25 @@
       }
       sgCheckbox.dataset.sgBound = "1";
 
-      var targetId = sgCheckbox.getAttribute("data-sg-toggle");
-      var sgControls = document.getElementById(targetId);
-      if (!sgControls) {
+      var targetIds = sgCheckbox.getAttribute("data-sg-toggle").split(",");
+      var sgControls = [];
+      for (var t = 0; t < targetIds.length; t++) {
+        var el = document.getElementById(targetIds[t].trim());
+        if (el) {
+          sgControls.push(el);
+        }
+      }
+      if (sgControls.length === 0) {
         return;
       }
 
       var update = function () {
-        if (sgCheckbox.checked) {
-          sgControls.classList.add("visible");
-        } else {
-          sgControls.classList.remove("visible");
+        for (var i = 0; i < sgControls.length; i++) {
+          if (sgCheckbox.checked) {
+            sgControls[i].classList.add("visible");
+          } else {
+            sgControls[i].classList.remove("visible");
+          }
         }
       };
 

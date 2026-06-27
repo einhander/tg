@@ -10,25 +10,32 @@
       <div class="compact-panel-title">Настройки TGA2</div>
       <div class="checkbox compact-checkbox">
         <label>
-          <input id="tga2-sg-mode"
-                 name="sg_mode"
-                 type="checkbox"
-                 value="1"
-                 data-sg-toggle="tga2-sg-controls"
+         <input id="tga2-sg-mode"
+                  name="sg_mode"
+                  type="checkbox"
+                  value="1"
+                  data-sg-toggle="tga2-sg-mass-controls,tga2-sg-temp-controls"
                  {% if tga2_settings.sg_mode|default(False) %}checked{% endif %}>
           Savitzky-Golay сглаживание
         </label>
       </div>
 
-      <div class="form-group compact-form-group sg-controls" id="tga2-sg-controls">
-        <label for="tga2-sg-window" class="control-label">SG Window</label>
-        <input id="tga2-sg-window" name="sg_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_window|default(11) }}" class="form-control range-control">
-        <div class="range-value">{{ tga2_settings.sg_window|default(11) }}</div>
+      <div class="form-group compact-form-group sg-controls" id="tga2-sg-mass-controls">
+        <label for="tga2-sg-mass-window" class="control-label">SG Window (масса)</label>
+        <input id="tga2-sg-mass-window" name="sg_mass_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_mass_window|default(11) }}" class="form-control range-control">
+        <div class="range-value">{{ tga2_settings.sg_mass_window|default(11) }}</div>
+      </div>
+
+      <div class="form-group compact-form-group sg-controls" id="tga2-sg-temp-controls">
+        <label for="tga2-sg-temp-window" class="control-label">SG Window (температура)</label>
+        <input id="tga2-sg-temp-window" name="sg_temp_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_temp_window|default(11) }}" class="form-control range-control">
+        <div class="range-value">{{ tga2_settings.sg_temp_window|default(11) }}</div>
       </div>
 
       <div class="visibility-grid">
         <label class="visibility-item"><input name="hide_tg" type="checkbox" value="1" {% if tga2_settings.hide_tg|default(False) %}checked{% endif %}> ТГ</label>
         <label class="visibility-item"><input name="hide_dta" type="checkbox" value="1" {% if tga2_settings.hide_dta|default(False) %}checked{% endif %}> ДТА</label>
+        <label class="visibility-item"><input name="hide_dtg" type="checkbox" value="1" {% if tga2_settings.hide_dtg|default(False) %}checked{% endif %}> ТГП</label>
         <button type="submit" class="btn btn-default btn-compact-inline">Обновить</button>
       </div>
     </form>

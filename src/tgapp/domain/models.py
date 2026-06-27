@@ -44,9 +44,11 @@ class ProcessingSettings:
 @dataclass(slots=True)
 class Tga2PlotSettings:
     sg_mode: bool = False
-    sg_window: int = 11
+    sg_mass_window: int = 11
+    sg_temp_window: int = 11
     hide_tg: bool = False
     hide_dta: bool = False
+    hide_dtg: bool = False
 
 
 @dataclass(slots=True)

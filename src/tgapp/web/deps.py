@@ -85,5 +85,12 @@ def get_tga2_settings(request: Request, session_state: dict[str, Any]) -> dict[s
 
     settings = get_storage(request).load_json(get_storage(request).tga2_settings_path(session_id))
     if isinstance(settings, dict) and settings:
-        return asdict(Tga2PlotSettings(**settings))
+        # Filter to only valid Tga2PlotSettings fields for backward compatibility
+        valid_fields = {"sg_mode", "sg_mass_window", "sg_temp_window", "hide_tg", "hide_dta", "hide_dtg"}
+        filtered = {k: v for k, v in settings.items() if k in valid_fields}
+        # Backward compat: map old sg_window to both new windows
+        if "sg_window" in settings and "sg_mass_window" not in filtered:
+            filtered["sg_mass_window"] = settings["sg_window"]
+            filtered["sg_temp_window"] = settings["sg_window"]
+        return asdict(Tga2PlotSettings(**filtered))
     return asdict(Tga2PlotSettings())

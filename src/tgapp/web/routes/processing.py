@@ -45,14 +45,36 @@ def _build_settings(current: dict[str, Any], form: dict[str, str | None]) -> Pro
     return ProcessingSettings(**cast(dict[str, Any], base))
 
 
+TGA2_HIDE_KEYS = {"hide_tg", "hide_dta", "hide_dtg"}
+TGA2_BOOL_KEYS = {"sg_mode"} | TGA2_HIDE_KEYS
+
+
 def _build_tga2_settings(current: dict[str, Any], form: dict[str, str | None]) -> Tga2PlotSettings:
-    current_settings = Tga2PlotSettings(**current) if current else Tga2PlotSettings()
+    # Filter current settings to only include valid Tga2PlotSettings fields
+    valid_fields = {"sg_mode", "sg_mass_window", "sg_temp_window", "hide_tg", "hide_dta", "hide_dtg"}
+    filtered_current = {k: v for k, v in current.items() if k in valid_fields} if current else {}
+    # Backward compat: map old sg_window to both new windows
+    if "sg_window" in current and "sg_mass_window" not in filtered_current:
+        filtered_current["sg_mass_window"] = current["sg_window"]
+        filtered_current["sg_temp_window"] = current["sg_window"]
+    current_settings = Tga2PlotSettings(**filtered_current) if filtered_current else Tga2PlotSettings()
     base = asdict(current_settings)
     for key, value in form.items():
-        if key in {"sg_mode", "hide_tg", "hide_dta"}:
+        if value is None or value == "":
+            continue
+        if key in TGA2_BOOL_KEYS:
             base[key] = _as_bool(value if isinstance(value, str) else None)
-        elif key == "sg_window" and value not in (None, ""):
+        elif key in {"sg_mass_window", "sg_temp_window"}:
             base[key] = int(cast(str, value))
+        # Backward compat: old sg_window maps to both new windows
+        elif key == "sg_window":
+            base["sg_mass_window"] = int(cast(str, value))
+            base["sg_temp_window"] = int(cast(str, value))
+    # Reset unchecked hide keys to False when visibility form submitted
+    if any(key in form and form[key] is not None for key in TGA2_HIDE_KEYS):
+        for key in TGA2_HIDE_KEYS:
+            if form[key] is None:
+                base[key] = False
     return Tga2PlotSettings(**cast(dict[str, Any], base))
 
 
@@ -96,16 +118,16 @@ async def process(request: Request, response: Response, init_mass: str | None = 
 
 
 @router.post("/tga2/plot", name="update_tga2_plot")
-async def update_tga2_plot(request: Request, response: Response, sg_mode: str | None = Form(None), sg_window: str | None = Form(None), hide_tg: str | None = Form(None), hide_dta: str | None = Form(None)):
+async def update_tga2_plot(request: Request, response: Response, sg_mode: str | None = Form(None), sg_mass_window: str | None = Form(None), sg_temp_window: str | None = Form(None), hide_tg: str | None = Form(None), hide_dta: str | None = Form(None), hide_dtg: str | None = Form(None)):
     session_state = get_or_create_session_state(request, response)
     storage = get_storage(request)
     session_id = session_state.get("session_id")
-    settings = _build_tga2_settings(get_tga2_settings(request, session_state), {"sg_mode": sg_mode, "sg_window": sg_window, "hide_tg": hide_tg, "hide_dta": hide_dta})
+    settings = _build_tga2_settings(get_tga2_settings(request, session_state), {"sg_mode": sg_mode, "sg_mass_window": sg_mass_window, "sg_temp_window": sg_temp_window, "hide_tg": hide_tg, "hide_dta": hide_dta, "hide_dtg": hide_dtg})
 
     if isinstance(session_id, str) and session_id:
         storage.save_json(storage.tga2_settings_path(session_id), asdict(settings))
 
-    raw_frames = storage.load_thermograms(session_id) if isinstance(session_id, str) and session_id else {}
+    raw_frames = storage.load_raw_thermograms(session_id) if isinstance(session_id, str) and session_id else {}
     first_frame = next(iter(raw_frames.values()), pd.DataFrame())
     context = page_context(
         request=request,

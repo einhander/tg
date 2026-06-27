@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go  # pyright: ignore[reportMissingImports]
 
 from tgapp.application.dto import PlotPayload
+
+logger = logging.getLogger(__name__)
 from tgapp.domain.models import Tga2PlotSettings
+from tgapp.domain.processing import compute_dmdt_trace
 from tgapp.domain.smoothing import smooth_mass_savitzky_golay
 from tgapp.infrastructure.serialization import _json_safe
 
@@ -138,24 +142,70 @@ def build_raw_plot(frame: pd.DataFrame, settings: Tga2PlotSettings | None = None
     plot_settings = settings or Tga2PlotSettings()
     plot_frame = frame.copy()
 
+    # Apply separate SG smoothing to mass and deltatemp
     if plot_settings.sg_mode and not plot_frame.empty:
         if "mass" in plot_frame.columns:
-            plot_frame["mass"] = _smooth_series_savgol(plot_frame["mass"], plot_settings.sg_window)
+            plot_frame["mass"] = _smooth_series_savgol(plot_frame["mass"], plot_settings.sg_mass_window)
         if "deltatemp" in plot_frame.columns:
-            plot_frame["deltatemp"] = _smooth_series_savgol(plot_frame["deltatemp"], plot_settings.sg_window)
+            plot_frame["deltatemp"] = _smooth_series_savgol(plot_frame["deltatemp"], plot_settings.sg_temp_window)
+
+    mass_scale = _mass_scale(plot_frame)
 
     if not plot_settings.hide_tg and not plot_frame.empty and {"temp", "mass"}.issubset(plot_frame.columns):
-        figure.add_trace(go.Scatter(x=plot_frame["temp"], y=plot_frame["mass"], mode="lines", name="ТГ"))
+        figure.add_trace(
+            go.Scatter(
+                x=plot_frame["temp"],
+                y=plot_frame["mass"] * mass_scale,
+                mode="lines",
+                name="ТГ",
+                yaxis="y2",
+                customdata=plot_frame[["mass"]].to_numpy(),
+                hovertemplate="Температура=%{x}<br>Масса=%{customdata[0]}<extra></extra>",
+            )
+        )
     if not plot_settings.hide_dta and not plot_frame.empty and {"temp", "deltatemp"}.issubset(plot_frame.columns):
         figure.add_trace(go.Scatter(x=plot_frame["temp"], y=plot_frame["deltatemp"], mode="lines", name="ДТА"))
+
+    # Compute and add DTG trace from mass/time derivative
+    if not plot_settings.hide_dtg and not plot_frame.empty and {"temp", "mass", "time"}.issubset(plot_frame.columns):
+        dmdt = compute_dmdt_trace(plot_frame, difflag=1, bins=len(plot_frame))
+        if dmdt.dropna().empty:
+            dmdt = None
+        if dmdt is not None and len(dmdt) == len(plot_frame):
+            dmdt_arr = dmdt.to_numpy(dtype=np.float64)
+            figure.add_trace(
+                go.Scatter(
+                    x=plot_frame["temp"],
+                    y=dmdt_arr * DTG_PLOT_SCALE,
+                    mode="lines",
+                    name="ТГП",
+                    customdata=dmdt_arr.reshape(-1, 1),
+                    hovertemplate="Температура=%{x}<br>ТГП (масштаб)=%{y}<br>ТГП=%{customdata[0]}<extra></extra>",
+                )
+            )
+
+    # Update axis title when DTG is visible
+    yaxis_title = "ДТА / ТГП (масштаб), °C" if not plot_settings.hide_dtg else "Разница температур, °C"
 
     figure.update_layout(
         title=PLOT_TITLE,
         template="plotly_white",
         xaxis_title="Температура, °C",
-        yaxis_title="Значение",
+        yaxis_title=yaxis_title,
+        yaxis2={
+            "title": "Масса, г",
+            "overlaying": "y",
+            "side": "right",
+            "showgrid": False,
+            "tickmode": "auto",
+        },
         legend={"x": 0.02, "y": 0.98, "xanchor": "left", "yanchor": "top"},
     )
+
+    if not plot_frame.empty and mass_scale not in (0.0, 1.0) and {"mass", "deltatemp"}.issubset(plot_frame.columns):
+        primary_ticks = figure.layout.yaxis.tickvals
+        if primary_ticks:
+            figure.update_layout(yaxis2={**figure.layout.yaxis2.to_plotly_json(), "tickvals": primary_ticks, "ticktext": [f"{tick / mass_scale:.3f}" for tick in primary_ticks]})
     return figure
 
 
