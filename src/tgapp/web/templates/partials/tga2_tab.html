@@ -1,17 +1,43 @@
 <div class="tga2-tab settings-workspace">
   <div class="settings-sidebar-zone">
-    <div class="compact-panel compact-panel-section">
+    <form id="tga2-form"
+          class="compact-panel compact-panel-section settings-form"
+          method="post"
+          action="{{ tga2_plot_url }}"
+          hx-post="{{ tga2_plot_url }}"
+          hx-target="#process-response"
+          hx-swap="innerHTML">
       <div class="compact-panel-title">Настройки TGA2</div>
-      <p class="help-block">Настройки графика TGA2 будут добавлены позже.</p>
-    </div>
+      <div class="checkbox compact-checkbox">
+        <label>
+          <input id="tga2-sg-mode"
+                 name="sg_mode"
+                 type="checkbox"
+                 value="1"
+                 data-sg-toggle="tga2-sg-controls"
+                 {% if tga2_settings.sg_mode|default(False) %}checked{% endif %}>
+          Savitzky-Golay сглаживание
+        </label>
+      </div>
+
+      <div class="form-group compact-form-group sg-controls" id="tga2-sg-controls">
+        <label for="tga2-sg-window" class="control-label">SG Window</label>
+        <input id="tga2-sg-window" name="sg_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_window|default(11) }}" class="form-control range-control">
+        <div class="range-value">{{ tga2_settings.sg_window|default(11) }}</div>
+      </div>
+
+      <div class="visibility-grid">
+        <label class="visibility-item"><input name="hide_tg" type="checkbox" value="1" {% if tga2_settings.hide_tg|default(False) %}checked{% endif %}> ТГ</label>
+        <label class="visibility-item"><input name="hide_dta" type="checkbox" value="1" {% if tga2_settings.hide_dta|default(False) %}checked{% endif %}> ДТА</label>
+        <button type="submit" class="btn btn-default btn-compact-inline">Обновить</button>
+      </div>
+    </form>
   </div>
 
   <div class="settings-main-zone">
     <div class="compact-panel plot-dashboard-panel">
       <div class="compact-panel-title">TGA2</div>
-      <div id="tga2-plot" class="main-plot" style="height: 600px; display: flex; align-items: center; justify-content: center; color: #999;">
-        График TGA2 — загрузите файл и обработайте данные
-      </div>
+      <div id="tga2-plot" class="main-plot" data-plot-json='{{ tga2_plot_json|e }}' data-plot-height="600px" style="height: 600px;"></div>
     </div>
   </div>
 </div>

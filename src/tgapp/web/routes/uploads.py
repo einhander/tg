@@ -5,11 +5,14 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
+import pandas as pd
 
 from tgapp.application.dto import UploadPayload
 from tgapp.application.use_cases import import_saved_session, load_correction, load_thermograms
 from tgapp.application.view_models import page_context
-from tgapp.web.deps import SESSION_COOKIE_NAME, ensure_session_cookie, get_config, get_or_create_session_state, get_processing_state, get_storage, get_templates
+from tgapp.domain.models import Tga2PlotSettings
+from tgapp.infrastructure.plotting import build_raw_plot, figure_to_json
+from tgapp.web.deps import SESSION_COOKIE_NAME, ensure_session_cookie, get_config, get_or_create_session_state, get_processing_state, get_storage, get_templates, get_tga2_settings
 
 router = APIRouter(prefix="/upload")
 
@@ -40,20 +43,27 @@ async def _single_upload_from_form(request: Request, *field_names: str) -> Uploa
 @router.post("/thermograms")
 async def upload_thermograms(request: Request, response: Response):
     session_state = get_or_create_session_state(request, response)
+    storage = get_storage(request)
     thermograms = await _uploads_from_form(request, "thermograms", "thermogramm")
     if not thermograms:
         raise HTTPException(status_code=422, detail="Missing upload field. Expected thermograms or thermogramm.")
     uploads = [await _to_payload(item) for item in thermograms]
-    state = load_thermograms(get_storage(request), session_state, uploads)
+    state = load_thermograms(storage, session_state, uploads)
     session_state = asdict(state)
+    tga2_settings = get_tga2_settings(request, session_state)
+    raw_thermograms = storage.load_thermograms(session_state.get("session_id") or "")
+    first_frame = next(iter(raw_thermograms.values()), pd.DataFrame())
+    raw_plot_json = figure_to_json(build_raw_plot(first_frame, Tga2PlotSettings(**tga2_settings)))
     context = page_context(
         request=request,
         base_path=get_config(request).public_base_path,
         session_state=session_state,
         processing_state=get_processing_state(request, session_state),
+        tga2_settings=tga2_settings,
+        tga2_plot_json=raw_plot_json,
         upload_status={"message": f"Loaded {len(uploads)} thermogram file(s).", "status": state.status},
     )
-    template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_status_block.html", context=context)
+    template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_thermograms_response.html", context=context)
     return ensure_session_cookie(request, template_response, session_state)
 
 

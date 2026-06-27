@@ -8,6 +8,7 @@ from fastapi import Request, Response
 from tgapp.application.session_state import create_default_processing_state, create_default_session_state
 from tgapp.application.use_cases import create_session
 from tgapp.config import AppConfig
+from tgapp.domain.models import Tga2PlotSettings
 from tgapp.infrastructure.storage import SessionStorage
 
 SESSION_COOKIE_NAME = "tgapp_session_id"
@@ -75,3 +76,14 @@ def get_processing_state(request: Request, session_state: dict[str, Any]) -> dic
     processing_state["heat_speed_text"] = last_process.get("heat_speed_text", processing_state.get("heat_speed_text"))
     processing_state["effect_text"] = "Effect: select a temperature interval"
     return processing_state
+
+
+def get_tga2_settings(request: Request, session_state: dict[str, Any]) -> dict[str, Any]:
+    session_id = session_state.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return asdict(Tga2PlotSettings())
+
+    settings = get_storage(request).load_json(get_storage(request).tga2_settings_path(session_id))
+    if isinstance(settings, dict) and settings:
+        return asdict(Tga2PlotSettings(**settings))
+    return asdict(Tga2PlotSettings())

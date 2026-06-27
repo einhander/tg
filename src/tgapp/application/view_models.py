@@ -52,7 +52,7 @@ def processing_view_model(processing_state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def page_context(*, request: Any, base_path: str, session_state: dict[str, Any], processing_state: dict[str, Any], plot_payload: dict[str, Any] | None = None, upload_status: dict[str, Any] | None = None, effect_text: str | None = None) -> dict[str, Any]:
+def page_context(*, request: Any, base_path: str, session_state: dict[str, Any], processing_state: dict[str, Any], plot_payload: dict[str, Any] | None = None, upload_status: dict[str, Any] | None = None, effect_text: str | None = None, tga2_settings: dict[str, Any] | None = None, tga2_plot_json: str | None = None) -> dict[str, Any]:
     processing_vm = processing_view_model(processing_state)
     session_vm = session_view_model(session_state)
     session_vm.setdefault("init_mass", processing_vm.get("init_mass", 1.0))
@@ -69,12 +69,15 @@ def page_context(*, request: Any, base_path: str, session_state: dict[str, Any],
         "upload_correction_url": _path_for(request, "upload_correction"),
         "process_url": _path_for(request, "process"),
         "effect_url": _path_for(request, "effect"),
+        "tga2_plot_url": _path_for(request, "update_tga2_plot"),
         "export_plot_url": _path_for(request, "export_plot"),
         "export_session_url": _path_for(request, "export_session"),
         "session": session_vm,
         "session_state": session_vm,
         "processing": processing_vm,
         "processing_state": processing_vm,
+        "tga2_settings": tga2_settings or {},
+        "tga2_plot_json": tga2_plot_json or "{}",
         "plot": plot_vm,
         "plot_payload": plot_vm,
         "plot_payload_json": plot_json,

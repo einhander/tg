@@ -65,7 +65,10 @@
 
   function renderPlots(root) {
     var scope = root || document;
-    var plots = scope.querySelectorAll("#main-plot[data-plot-json]");
+    if (scope.classList && scope.classList.contains("main-plot") && scope.getAttribute("data-plot-json")) {
+      renderPlot(scope);
+    }
+    var plots = scope.querySelectorAll(".main-plot[data-plot-json]");
     plots.forEach(renderPlot);
   }
 
@@ -182,28 +185,29 @@
 
   function bindSgToggle(root) {
     var scope = root || document;
-    var sgCheckbox = scope.querySelector("#sg-mode");
-    var sgControls = scope.querySelector("#sg-controls");
-
-    if (!sgCheckbox || !sgControls) {
-      return;
-    }
-
-    if (sgCheckbox.dataset.sgBound === "1") {
-      return;
-    }
-    sgCheckbox.dataset.sgBound = "1";
-
-    var update = function () {
-      if (sgCheckbox.checked) {
-        sgControls.classList.add("visible");
-      } else {
-        sgControls.classList.remove("visible");
+    scope.querySelectorAll("input[data-sg-toggle]").forEach(function (sgCheckbox) {
+      if (sgCheckbox.dataset.sgBound === "1") {
+        return;
       }
-    };
+      sgCheckbox.dataset.sgBound = "1";
 
-    sgCheckbox.addEventListener("change", update);
-    update();
+      var targetId = sgCheckbox.getAttribute("data-sg-toggle");
+      var sgControls = document.getElementById(targetId);
+      if (!sgControls) {
+        return;
+      }
+
+      var update = function () {
+        if (sgCheckbox.checked) {
+          sgControls.classList.add("visible");
+        } else {
+          sgControls.classList.remove("visible");
+        }
+      };
+
+      sgCheckbox.addEventListener("change", update);
+      update();
+    });
   }
 
   function bindVisibilityForm(root) {

@@ -4,13 +4,14 @@ import json
 from dataclasses import asdict
 from typing import Any, cast
 
+import pandas as pd
 from fastapi import APIRouter, Form, Request, Response
 
 from tgapp.application.use_cases import get_plot_payload, process_session
 from tgapp.application.view_models import page_context
-from tgapp.domain.models import ProcessingSettings
-from tgapp.infrastructure.plotting import build_main_plot, figure_to_json
-from tgapp.web.deps import ensure_session_cookie, get_config, get_or_create_session_state, get_processing_state, get_storage, get_templates
+from tgapp.domain.models import ProcessingSettings, Tga2PlotSettings
+from tgapp.infrastructure.plotting import build_main_plot, build_raw_plot, figure_to_json
+from tgapp.web.deps import ensure_session_cookie, get_config, get_or_create_session_state, get_processing_state, get_storage, get_templates, get_tga2_settings
 
 router = APIRouter()
 
@@ -42,6 +43,17 @@ def _build_settings(current: dict[str, Any], form: dict[str, str | None]) -> Pro
             if form[key] is None:
                 base[key] = False
     return ProcessingSettings(**cast(dict[str, Any], base))
+
+
+def _build_tga2_settings(current: dict[str, Any], form: dict[str, str | None]) -> Tga2PlotSettings:
+    current_settings = Tga2PlotSettings(**current) if current else Tga2PlotSettings()
+    base = asdict(current_settings)
+    for key, value in form.items():
+        if key in {"sg_mode", "hide_tg", "hide_dta"}:
+            base[key] = _as_bool(value if isinstance(value, str) else None)
+        elif key == "sg_window" and value not in (None, ""):
+            base[key] = int(cast(str, value))
+    return Tga2PlotSettings(**cast(dict[str, Any], base))
 
 
 @router.post("/process")
@@ -76,7 +88,32 @@ async def process(request: Request, response: Response, init_mass: str | None = 
         base_path=get_config(request).public_base_path,
         session_state=session_state,
         processing_state=processing_state,
+        tga2_settings=get_tga2_settings(request, session_state),
         plot_payload=json.loads(plot_json_str),
     )
     template_response = get_templates(request).TemplateResponse(request=request, name="partials/process_response.html", context=context)
+    return ensure_session_cookie(request, template_response, session_state)
+
+
+@router.post("/tga2/plot", name="update_tga2_plot")
+async def update_tga2_plot(request: Request, response: Response, sg_mode: str | None = Form(None), sg_window: str | None = Form(None), hide_tg: str | None = Form(None), hide_dta: str | None = Form(None)):
+    session_state = get_or_create_session_state(request, response)
+    storage = get_storage(request)
+    session_id = session_state.get("session_id")
+    settings = _build_tga2_settings(get_tga2_settings(request, session_state), {"sg_mode": sg_mode, "sg_window": sg_window, "hide_tg": hide_tg, "hide_dta": hide_dta})
+
+    if isinstance(session_id, str) and session_id:
+        storage.save_json(storage.tga2_settings_path(session_id), asdict(settings))
+
+    raw_frames = storage.load_thermograms(session_id) if isinstance(session_id, str) and session_id else {}
+    first_frame = next(iter(raw_frames.values()), pd.DataFrame())
+    context = page_context(
+        request=request,
+        base_path=get_config(request).public_base_path,
+        session_state=session_state,
+        processing_state=get_processing_state(request, session_state),
+        tga2_settings=asdict(settings),
+        tga2_plot_json=figure_to_json(build_raw_plot(first_frame, settings)),
+    )
+    template_response = get_templates(request).TemplateResponse(request=request, name="partials/tga2_plot_response.html", context=context)
     return ensure_session_cookie(request, template_response, session_state)

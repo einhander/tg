@@ -1,0 +1,9 @@
+{% with oob = true %}
+  {% include "partials/upload_status_block.html" %}
+{% endwith %}
+
+<div id="tga2-plot"
+     class="main-plot"
+     data-plot-json='{{ tga2_plot_json|default("{}")|e }}'
+     data-plot-height="600px"
+     hx-swap-oob="true"></div>

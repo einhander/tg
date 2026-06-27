@@ -7,6 +7,8 @@ import pandas as pd
 import plotly.graph_objects as go  # pyright: ignore[reportMissingImports]
 
 from tgapp.application.dto import PlotPayload
+from tgapp.domain.models import Tga2PlotSettings
+from tgapp.domain.smoothing import smooth_mass_savitzky_golay
 from tgapp.infrastructure.serialization import _json_safe
 
 
@@ -115,6 +117,45 @@ def build_main_plot(payload: PlotPayload) -> go.Figure:
         if primary_ticks:
             figure.update_layout(yaxis2={**figure.layout.yaxis2.to_plotly_json(), "tickvals": primary_ticks, "ticktext": [f"{tick / mass_scale:.3f}" for tick in primary_ticks]})
 
+    return figure
+
+
+def _smooth_series_savgol(series: pd.Series, window: int, polyorder: int = 3) -> pd.Series:
+    numeric = pd.to_numeric(series, errors="coerce")
+    values = numeric.to_numpy(dtype=float)
+    valid = np.isfinite(values)
+    if valid.sum() < 3:
+        return numeric
+
+    smoothed = numeric.copy()
+    filtered = smooth_mass_savitzky_golay(pd.DataFrame({"mass": values[valid]}), window, polyorder)["mass"].to_numpy(dtype=float)
+    smoothed.loc[valid] = filtered
+    return smoothed
+
+
+def build_raw_plot(frame: pd.DataFrame, settings: Tga2PlotSettings | None = None) -> go.Figure:
+    figure = go.Figure()
+    plot_settings = settings or Tga2PlotSettings()
+    plot_frame = frame.copy()
+
+    if plot_settings.sg_mode and not plot_frame.empty:
+        if "mass" in plot_frame.columns:
+            plot_frame["mass"] = _smooth_series_savgol(plot_frame["mass"], plot_settings.sg_window)
+        if "deltatemp" in plot_frame.columns:
+            plot_frame["deltatemp"] = _smooth_series_savgol(plot_frame["deltatemp"], plot_settings.sg_window)
+
+    if not plot_settings.hide_tg and not plot_frame.empty and {"temp", "mass"}.issubset(plot_frame.columns):
+        figure.add_trace(go.Scatter(x=plot_frame["temp"], y=plot_frame["mass"], mode="lines", name="ТГ"))
+    if not plot_settings.hide_dta and not plot_frame.empty and {"temp", "deltatemp"}.issubset(plot_frame.columns):
+        figure.add_trace(go.Scatter(x=plot_frame["temp"], y=plot_frame["deltatemp"], mode="lines", name="ДТА"))
+
+    figure.update_layout(
+        title=PLOT_TITLE,
+        template="plotly_white",
+        xaxis_title="Температура, °C",
+        yaxis_title="Значение",
+        legend={"x": 0.02, "y": 0.98, "xanchor": "left", "yanchor": "top"},
+    )
     return figure
 
 

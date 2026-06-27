@@ -40,6 +40,9 @@ class SessionStorage:
     def settings_path(self, session_id: str) -> Path:
         return self.session_dir(session_id) / "settings.json"
 
+    def tga2_settings_path(self, session_id: str) -> Path:
+        return self.session_dir(session_id) / "tga2-settings.json"
+
     def metadata_path(self, session_id: str) -> Path:
         return self.session_dir(session_id) / "metadata.json"
 
