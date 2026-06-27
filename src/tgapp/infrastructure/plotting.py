@@ -175,6 +175,9 @@ def build_raw_plot(frame: pd.DataFrame, settings: Tga2PlotSettings | None = None
         if dmdt.dropna().empty:
             dmdt = None
         if dmdt is not None and len(dmdt) == len(plot_frame):
+            # Apply SG smoothing to DTG to reduce noise from finite-difference derivative
+            if plot_settings.sg_mode:
+                dmdt = _smooth_series_savgol(dmdt, plot_settings.sg_dtg_window)
             dmdt_arr = dmdt.to_numpy(dtype=np.float64)
             figure.add_trace(
                 go.Scatter(

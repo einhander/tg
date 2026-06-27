@@ -31,7 +31,7 @@ class ProcessingSettings:
     use_correction: bool = False
     smooth_dmdt: bool = False
     span: float = 91
-    sg_mode: bool = False
+    sg_mode: bool = True
     sg_window: int = 11
     sg_polyorder: int = 3
     hide_tg: bool = False
@@ -46,6 +46,7 @@ class Tga2PlotSettings:
     sg_mode: bool = False
     sg_mass_window: int = 11
     sg_temp_window: int = 11
+    sg_dtg_window: int = 11
     hide_tg: bool = False
     hide_dta: bool = False
     hide_dtg: bool = False

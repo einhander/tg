@@ -72,8 +72,6 @@ def process_thermograms(
     mean_frame = compute_mean_traces(resampled)
     adjusted_difflag = estimate_adjusted_difflag(resampled, settings.bins, settings.difflag)
 
-    mean_frame = round_mean_frame(mean_frame)
-
     # Apply Savitzky-Golay smoothing to mass BEFORE computing derivative
     if settings.sg_mode:
         mean_frame = smooth_mass_savitzky_golay(mean_frame, settings.sg_window, settings.sg_polyorder)
@@ -89,9 +87,13 @@ def process_thermograms(
 
     mean_frame = smooth_temperature(mean_frame, settings.temp_smoothing)
     mean_frame = smooth_derivative(mean_frame, settings.span, settings.smooth_dmdt)
+
+    # Detect peaks on unrounded data for stable extrema detection
+    peaks = detect_peaks(mean_frame, settings)
+
+    # Round for output parity after analysis
     mean_frame = round_mean_frame(mean_frame)
 
-    peaks = detect_peaks(mean_frame, settings)
     summary = build_summary(thermograms, mean_frame, peaks)
     heat_speed = build_heat_speed_text(mean_frame)
     return ThermogramProcessed(

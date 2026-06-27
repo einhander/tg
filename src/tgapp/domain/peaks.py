@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-import math
-
+import numpy as np
 import pandas as pd
 
 from tgapp.domain.models import PeakResult, ProcessingSettings
+
+
+# Minimum peak prominence in noise-sigma units.
+# Peaks with prominence below this threshold are treated as noise.
+_MIN_PROMINENCE_SIGMA = 5.0
+
+# Window for noise estimation (rolling mean to extract signal)
+_NOISE_WINDOW = 11
 
 
 def _window_from_span(length: int, span: float) -> int:
@@ -21,7 +28,34 @@ def _half_window(length: int, span: float) -> int:
     return max((_window_from_span(length, span) - 1) // 2, 1)
 
 
-def _detect_trace_extrema(frame: pd.DataFrame, y_column: str, trace_kind: str, span: float) -> list[PeakResult]:
+def _estimate_noise_sigma(y: np.ndarray) -> float:
+    """Estimate noise sigma from high-frequency residual using MAD.
+
+    Uses a simple rolling mean to extract signal, then measures the
+    median absolute deviation of the residual. No external dependencies.
+    """
+    n = len(y)
+    if n < _NOISE_WINDOW + 2:
+        return float(np.std(y)) if n > 1 else 0.0
+
+    # Extract signal via rolling mean (numpy-only, no scipy)
+    cumsum = np.cumsum(np.insert(y, 0, 0))
+    signal = (cumsum[_NOISE_WINDOW:] - cumsum[:-_NOISE_WINDOW]) / _NOISE_WINDOW
+    # Align lengths: rolling mean is shorter by (window - 1)
+    align = (_NOISE_WINDOW - 1) // 2
+    residual = y[align:align + len(signal)] - signal
+
+    # MAD-based sigma estimate (robust to outliers)
+    mad = float(np.median(np.abs(residual - np.median(residual))))
+    return 1.4826 * mad
+
+
+def _detect_trace_extrema(
+    frame: pd.DataFrame,
+    y_column: str,
+    trace_kind: str,
+    span: float,
+) -> list[PeakResult]:
     if frame.empty or "temp" not in frame.columns or y_column not in frame.columns:
         return []
 
@@ -30,6 +64,12 @@ def _detect_trace_extrema(frame: pd.DataFrame, y_column: str, trace_kind: str, s
         return []
 
     window = _half_window(len(valid.index), span)
+    y_values = valid[y_column].to_numpy(dtype=float)
+
+    # Estimate noise floor for prominence filtering
+    noise_sigma = _estimate_noise_sigma(y_values)
+    min_prominence = _MIN_PROMINENCE_SIGMA * noise_sigma if noise_sigma > 0 else 0.0
+
     results: list[PeakResult] = []
     for index in range(window, len(valid.index) - window):
         segment = valid.iloc[index - window : index + window + 1]
@@ -40,12 +80,45 @@ def _detect_trace_extrema(frame: pd.DataFrame, y_column: str, trace_kind: str, s
 
         left_y = float(valid.iloc[index - 1][y_column])
         right_y = float(valid.iloc[index + 1][y_column])
-        prominence = segment_max - segment_min
+        local_range = segment_max - segment_min
 
-        if center_y == segment_max and center_y >= left_y and center_y > right_y and prominence > 0:
-            results.append(PeakResult(x=center_x, y=center_y, label=f"{center_x:.1f}", kind=trace_kind, extremum="peak"))
-        elif center_y == segment_min and center_y <= left_y and center_y < right_y and prominence > 0:
-            results.append(PeakResult(x=center_x, y=center_y, label=f"{center_x:.1f}", kind=trace_kind, extremum="valley"))
+        # Peak: local maximum with sufficient prominence
+        if (
+            center_y == segment_max
+            and center_y >= left_y
+            and center_y > right_y
+            and local_range > 0
+        ):
+            # Compute per-peak prominence: distance from peak to local baseline
+            prominence = abs(center_y - segment_min)
+            if prominence >= min_prominence:
+                results.append(
+                    PeakResult(
+                        x=center_x,
+                        y=center_y,
+                        label=f"{center_x:.1f}",
+                        kind=trace_kind,
+                        extremum="peak",
+                    )
+                )
+        # Valley: local minimum with sufficient prominence
+        elif (
+            center_y == segment_min
+            and center_y <= left_y
+            and center_y < right_y
+            and local_range > 0
+        ):
+            prominence = abs(center_y - segment_max)
+            if prominence >= min_prominence:
+                results.append(
+                    PeakResult(
+                        x=center_x,
+                        y=center_y,
+                        label=f"{center_x:.1f}",
+                        kind=trace_kind,
+                        extremum="valley",
+                    )
+                )
 
     return _dedupe_extrema(results, window)
 
@@ -60,7 +133,11 @@ def _dedupe_extrema(results: list[PeakResult], window: int) -> list[PeakResult]:
             deduped.append(peak)
             continue
         previous = deduped[-1]
-        same_group = previous.kind == peak.kind and previous.extremum == peak.extremum and abs(previous.x - peak.x) <= min_distance
+        same_group = (
+            previous.kind == peak.kind
+            and previous.extremum == peak.extremum
+            and abs(previous.x - peak.x) <= min_distance
+        )
         if same_group:
             if abs(peak.y) >= abs(previous.y):
                 deduped[-1] = peak

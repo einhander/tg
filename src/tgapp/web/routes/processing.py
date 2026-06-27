@@ -57,7 +57,7 @@ TGA2_BOOL_KEYS = {"sg_mode"}
 
 def _build_tga2_settings(current: dict[str, Any], form: dict[str, str | None]) -> Tga2PlotSettings:
     # Filter current settings to only include valid Tga2PlotSettings fields
-    valid_fields = {"sg_mode", "sg_mass_window", "sg_temp_window", "hide_tg", "hide_dta", "hide_dtg"}
+    valid_fields = {"sg_mode", "sg_mass_window", "sg_temp_window", "sg_dtg_window", "hide_tg", "hide_dta", "hide_dtg"}
     filtered_current = {k: v for k, v in current.items() if k in valid_fields} if current else {}
     # Backward compat: map old sg_window to both new windows
     if "sg_window" in current and "sg_mass_window" not in filtered_current:
@@ -72,7 +72,7 @@ def _build_tga2_settings(current: dict[str, Any], form: dict[str, str | None]) -
             base[key] = _as_bool(value if isinstance(value, str) else None)
         elif key in TGA2_SHOW_TO_HIDE:
             base[TGA2_SHOW_TO_HIDE[key]] = not _as_bool(value if isinstance(value, str) else None)
-        elif key in {"sg_mass_window", "sg_temp_window"}:
+        elif key in {"sg_mass_window", "sg_temp_window", "sg_dtg_window"}:
             base[key] = int(cast(str, value))
         # Backward compat: old sg_window maps to both new windows
         elif key == "sg_window":
@@ -121,7 +121,7 @@ async def process(request: Request, response: Response, init_mass: str | None = 
 
 
 @router.post("/tga2/plot", name="update_tga2_plot")
-async def update_tga2_plot(request: Request, response: Response, sg_mode: str | None = Form(None), sg_mass_window: str | None = Form(None), sg_temp_window: str | None = Form(None), show_tg: str | None = Form(None), show_dta: str | None = Form(None), show_dtg: str | None = Form(None)):
+async def update_tga2_plot(request: Request, response: Response, sg_mode: str | None = Form(None), sg_mass_window: str | None = Form(None), sg_temp_window: str | None = Form(None), sg_dtg_window: str | None = Form(None), show_tg: str | None = Form(None), show_dta: str | None = Form(None), show_dtg: str | None = Form(None)):
     session_state = get_or_create_session_state(request, response)
     storage = get_storage(request)
     session_id = session_state.get("session_id")
@@ -131,6 +131,7 @@ async def update_tga2_plot(request: Request, response: Response, sg_mode: str | 
             "sg_mode": sg_mode,
             "sg_mass_window": sg_mass_window,
             "sg_temp_window": sg_temp_window,
+            "sg_dtg_window": sg_dtg_window,
             "show_tg": show_tg,
             "show_dta": show_dta,
             "show_dtg": show_dtg,

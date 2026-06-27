@@ -11,11 +11,11 @@
       <div class="checkbox compact-checkbox">
         <label>
          <input id="tga2-sg-mode"
-                  name="sg_mode"
-                  type="checkbox"
-                  value="1"
-                  data-sg-toggle="tga2-sg-mass-controls,tga2-sg-temp-controls"
-                 {% if tga2_settings.sg_mode|default(False) %}checked{% endif %}>
+                   name="sg_mode"
+                   type="checkbox"
+                   value="1"
+                   data-sg-toggle="tga2-sg-mass-controls,tga2-sg-temp-controls,tga2-sg-dtg-controls"
+                  {% if tga2_settings.sg_mode|default(False) %}checked{% endif %}>
           Savitzky-Golay сглаживание
         </label>
       </div>
@@ -27,10 +27,16 @@
       </div>
 
       <div class="form-group compact-form-group sg-controls" id="tga2-sg-temp-controls">
-        <label for="tga2-sg-temp-window" class="control-label">SG Window (температура)</label>
-        <input id="tga2-sg-temp-window" name="sg_temp_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_temp_window|default(11) }}" class="form-control range-control">
-        <div class="range-value">{{ tga2_settings.sg_temp_window|default(11) }}</div>
-      </div>
+         <label for="tga2-sg-temp-window" class="control-label">SG Window (температура)</label>
+         <input id="tga2-sg-temp-window" name="sg_temp_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_temp_window|default(11) }}" class="form-control range-control">
+         <div class="range-value">{{ tga2_settings.sg_temp_window|default(11) }}</div>
+       </div>
+
+       <div class="form-group compact-form-group sg-controls" id="tga2-sg-dtg-controls">
+         <label for="tga2-sg-dtg-window" class="control-label">SG Window (ТГП)</label>
+         <input id="tga2-sg-dtg-window" name="sg_dtg_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_dtg_window|default(11) }}" class="form-control range-control">
+         <div class="range-value">{{ tga2_settings.sg_dtg_window|default(11) }}</div>
+       </div>
 
       <div class="visibility-grid">
         <input type="hidden" name="show_tg" value="{{ 0 if tga2_settings.hide_tg|default(False) else 1 }}" data-visibility-hidden="show_tg">
