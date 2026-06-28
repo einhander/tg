@@ -31,25 +31,31 @@ class ProcessingSettings:
     use_correction: bool = False
     smooth_dmdt: bool = False
     span: float = 91
+    peak_prominence_sigma: float = 5.0
     sg_mode: bool = True
     sg_window: int = 11
     sg_polyorder: int = 3
     hide_tg: bool = False
     hide_dta: bool = False
     hide_dtg: bool = False
+    hide_inflections_tg: bool = False
     hide_peaks_dta: bool = False
     hide_peaks_dmdt: bool = False
 
 
 @dataclass(slots=True)
-class Tga2PlotSettings:
-    sg_mode: bool = False
+class ThermogramViewSettings:
+    sg_mode: bool = True
     sg_mass_window: int = 11
     sg_temp_window: int = 11
     sg_dtg_window: int = 11
     hide_tg: bool = False
     hide_dta: bool = False
     hide_dtg: bool = False
+    hide_peaks_dta: bool = False
+    hide_peaks_dmdt: bool = False
+    hide_inflections_tg: bool = False
+    peak_prominence_sigma: float = 5.0
 
 
 @dataclass(slots=True)

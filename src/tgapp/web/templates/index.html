@@ -15,10 +15,7 @@
       <div class="main-panel workspace-shell">
         <ul class="nav nav-tabs app-tabs" role="tablist">
           <li class="active" role="presentation">
-            <a href="#tab-settings" class="tab-link" data-tab-target="tab-settings">TGA1</a>
-          </li>
-          <li role="presentation">
-            <a href="#tab-tga2" class="tab-link" data-tab-target="tab-tga2">TGA2</a>
+            <a href="#tab-thermogram" class="tab-link" data-tab-target="tab-thermogram">Термограмма</a>
           </li>
           <li role="presentation">
             <a href="#tab-mixchar" class="tab-link" data-tab-target="tab-mixchar">Деконволюция</a>
@@ -29,10 +26,7 @@
         </ul>
 
         <div class="tab-content app-tab-content">
-          <div id="tab-settings" class="tab-pane active" role="tabpanel">
-            {% include "partials/thermogram_tab.html" %}
-          </div>
-          <div id="tab-tga2" class="tab-pane" role="tabpanel">
+          <div id="tab-thermogram" class="tab-pane active" role="tabpanel">
             {% include "partials/tga2_tab.html" %}
           </div>
           <div id="tab-mixchar" class="tab-pane" role="tabpanel">

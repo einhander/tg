@@ -8,7 +8,7 @@ from fastapi import Request, Response
 from tgapp.application.session_state import create_default_processing_state, create_default_session_state
 from tgapp.application.use_cases import create_session
 from tgapp.config import AppConfig
-from tgapp.domain.models import Tga2PlotSettings
+from tgapp.domain.models import ThermogramViewSettings
 from tgapp.infrastructure.storage import SessionStorage
 
 SESSION_COOKIE_NAME = "tgapp_session_id"
@@ -78,19 +78,76 @@ def get_processing_state(request: Request, session_state: dict[str, Any]) -> dic
     return processing_state
 
 
-def get_tga2_settings(request: Request, session_state: dict[str, Any]) -> dict[str, Any]:
+def get_thermogram_settings(request: Request, session_state: dict[str, Any]) -> dict[str, Any]:
+    """Load unified thermogram settings with backward compatibility."""
     session_id = session_state.get("session_id")
     if not isinstance(session_id, str) or not session_id:
-        return asdict(Tga2PlotSettings())
+        return asdict(ThermogramViewSettings())
 
-    settings = get_storage(request).load_json(get_storage(request).tga2_settings_path(session_id))
-    if isinstance(settings, dict) and settings:
-        # Filter to only valid Tga2PlotSettings fields for backward compatibility
-        valid_fields = {"sg_mode", "sg_mass_window", "sg_temp_window", "hide_tg", "hide_dta", "hide_dtg"}
-        filtered = {k: v for k, v in settings.items() if k in valid_fields}
-        # Backward compat: map old sg_window to both new windows
-        if "sg_window" in settings and "sg_mass_window" not in filtered:
-            filtered["sg_mass_window"] = settings["sg_window"]
-            filtered["sg_temp_window"] = settings["sg_window"]
-        return asdict(Tga2PlotSettings(**filtered))
-    return asdict(Tga2PlotSettings())
+    storage = get_storage(request)
+
+    unified_path = storage.thermogram_settings_path(session_id)
+    if unified_path.exists():
+        settings = storage.load_json(unified_path)
+        if isinstance(settings, dict) and settings:
+            return _normalize_thermogram_settings(settings)
+
+    old_settings = storage.load_json(storage.settings_path(session_id))
+    old_tga2 = storage.load_json(storage.tga2_settings_path(session_id))
+
+    merged = {}
+    if isinstance(old_settings, dict) and old_settings:
+        merged.update(old_settings)
+    if isinstance(old_tga2, dict) and old_tga2:
+        for key in {"sg_mode", "sg_mass_window", "sg_temp_window", "sg_dtg_window", "hide_tg", "hide_dta", "hide_dtg", "hide_peaks_dta", "hide_peaks_dmdt", "hide_inflections_tg", "peak_prominence_sigma"}:
+            if key in old_tga2:
+                merged[key] = old_tga2[key]
+
+    return _normalize_thermogram_settings(merged)
+
+
+def _normalize_thermogram_settings(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize raw settings to ThermogramViewSchema."""
+    defaults = asdict(ThermogramViewSettings())
+    raw_copy = dict(raw)
+
+    legacy_sg_window = raw_copy.get("sg_window")
+    if legacy_sg_window is not None:
+        for key in ("sg_mass_window", "sg_temp_window", "sg_dtg_window"):
+            raw_copy.setdefault(key, legacy_sg_window)
+
+    normalized = {}
+    for key, default_val in defaults.items():
+        raw_val = raw_copy.get(key)
+        if raw_val is None:
+            normalized[key] = default_val
+        elif isinstance(default_val, bool):
+            normalized[key] = bool(raw_val)
+        elif isinstance(default_val, int):
+            try:
+                normalized[key] = int(raw_val)
+            except (ValueError, TypeError):
+                normalized[key] = default_val
+        elif isinstance(default_val, float):
+            try:
+                normalized[key] = float(raw_val)
+            except (ValueError, TypeError):
+                normalized[key] = default_val
+        else:
+            normalized[key] = raw_val
+    return normalized
+
+
+def get_tga2_settings(request: Request, session_state: dict[str, Any]) -> dict[str, Any]:
+    """Deprecated: use get_thermogram_settings() instead. Compatibility shim."""
+    return get_thermogram_settings(request, session_state)
+
+
+def save_thermogram_settings(request: Request, session_state: dict[str, Any], settings: dict[str, Any]) -> None:
+    """Save unified thermogram settings."""
+    session_id = session_state.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return
+    storage = get_storage(request)
+    unified_path = storage.thermogram_settings_path(session_id)
+    storage.save_json(unified_path, settings)

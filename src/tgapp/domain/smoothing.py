@@ -11,36 +11,57 @@ def smooth_mass(frame: pd.DataFrame, window: int) -> pd.DataFrame:
     return smoothed
 
 
-def smooth_mass_savitzky_golay(frame: pd.DataFrame, window: int, polyorder: int) -> pd.DataFrame:
-    """Apply Savitzky-Golay filter to mass column. Preserves peak shapes for clean derivatives."""
+def smooth_series_savitzky_golay(series: pd.Series, window: int, polyorder: int = 3) -> pd.Series:
+    """Apply Savitzky-Golay filter to one numeric series while preserving NaN gaps."""
+    numeric = pd.to_numeric(series, errors="coerce")
+    values = numeric.to_numpy(dtype=float)
+    valid = np.isfinite(values)
+    if valid.sum() < 3:
+        return numeric
+
+    smoothed = numeric.copy()
+    filtered = _savgol_values(values[valid], window, polyorder)
+    smoothed.loc[valid] = filtered
+    return smoothed
+
+
+def smooth_column_savitzky_golay(frame: pd.DataFrame, column: str, window: int, polyorder: int) -> pd.DataFrame:
+    """Apply Savitzky-Golay filter to one frame column."""
     smoothed = frame.copy()
-    if "mass" not in smoothed.columns or smoothed.empty:
+    if column not in smoothed.columns or smoothed.empty:
         return smoothed
 
-    mass = smoothed["mass"].to_numpy(dtype=float)
-    n = len(mass)
+    smoothed[column] = smooth_series_savitzky_golay(smoothed[column], window, polyorder)
+    return smoothed
 
-    # Window must be odd and > polyorder
+
+def smooth_mass_savitzky_golay(frame: pd.DataFrame, window: int, polyorder: int) -> pd.DataFrame:
+    """Apply Savitzky-Golay filter to mass column. Preserves peak shapes for clean derivatives."""
+    return smooth_column_savitzky_golay(frame, "mass", window, polyorder)
+
+
+def _savgol_values(values: np.ndarray, window: int, polyorder: int) -> np.ndarray:
+    n = len(values)
+    if n < 3:
+        return values.copy()
+
     win = max(window, 3)
     if win % 2 == 0:
         win += 1
     if win > n:
         win = n if n % 2 == 1 else n - 1
     if win < 3:
-        return smoothed
+        return values.copy()
 
     pord = min(max(polyorder, 1), win - 2)
 
     try:
         from scipy.signal import savgol_filter
-        smoothed["mass"] = savgol_filter(mass, win, pord)
+        return savgol_filter(values, win, pord)
     except ImportError:
-        # Fallback: weighted polynomial fit per window
-        smoothed["mass"] = _savgol_fallback(mass, win, pord)
+        return _savgol_fallback(values, win, pord)
     except ValueError:
-        pass
-
-    return smoothed
+        return values.copy()
 
 
 def _savgol_fallback(y: np.ndarray, window: int, polyorder: int) -> np.ndarray:

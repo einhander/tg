@@ -3,12 +3,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from tgapp.domain.models import PeakResult, ProcessingSettings
+from tgapp.domain.models import PeakResult, ProcessingSettings, ThermogramViewSettings
 
 
-# Minimum peak prominence in noise-sigma units.
+# Default prominence threshold in noise-sigma units.
 # Peaks with prominence below this threshold are treated as noise.
-_MIN_PROMINENCE_SIGMA = 5.0
+DEFAULT_PROMINENCE_SIGMA = 5.0
 
 # Window for noise estimation (rolling mean to extract signal)
 _NOISE_WINDOW = 11
@@ -26,6 +26,13 @@ def _window_from_span(length: int, span: float) -> int:
 
 def _half_window(length: int, span: float) -> int:
     return max((_window_from_span(length, span) - 1) // 2, 1)
+
+
+def _raw_half_window(length: int) -> int:
+    if length < 5:
+        return 1
+    window = max(length // 40, 2)
+    return min(window, max((length - 1) // 2, 1))
 
 
 def _estimate_noise_sigma(y: np.ndarray) -> float:
@@ -50,25 +57,20 @@ def _estimate_noise_sigma(y: np.ndarray) -> float:
     return 1.4826 * mad
 
 
-def _detect_trace_extrema(
-    frame: pd.DataFrame,
+def _detect_extrema_points(
+    valid: pd.DataFrame,
     y_column: str,
     trace_kind: str,
-    span: float,
+    window: int,
+    prominence_sigma: float,
 ) -> list[PeakResult]:
-    if frame.empty or "temp" not in frame.columns or y_column not in frame.columns:
-        return []
-
-    valid = frame.loc[:, ["temp", y_column]].dropna().reset_index(drop=True)
     if len(valid.index) < 3:
         return []
 
-    window = _half_window(len(valid.index), span)
     y_values = valid[y_column].to_numpy(dtype=float)
 
-    # Estimate noise floor for prominence filtering
     noise_sigma = _estimate_noise_sigma(y_values)
-    min_prominence = _MIN_PROMINENCE_SIGMA * noise_sigma if noise_sigma > 0 else 0.0
+    min_prominence = prominence_sigma * noise_sigma if noise_sigma > 0 else 0.0
 
     results: list[PeakResult] = []
     for index in range(window, len(valid.index) - window):
@@ -82,26 +84,15 @@ def _detect_trace_extrema(
         right_y = float(valid.iloc[index + 1][y_column])
         local_range = segment_max - segment_min
 
-        # Peak: local maximum with sufficient prominence
         if (
             center_y == segment_max
             and center_y >= left_y
             and center_y > right_y
             and local_range > 0
         ):
-            # Compute per-peak prominence: distance from peak to local baseline
             prominence = abs(center_y - segment_min)
             if prominence >= min_prominence:
-                results.append(
-                    PeakResult(
-                        x=center_x,
-                        y=center_y,
-                        label=f"{center_x:.1f}",
-                        kind=trace_kind,
-                        extremum="peak",
-                    )
-                )
-        # Valley: local minimum with sufficient prominence
+                results.append(PeakResult(x=center_x, y=center_y, label=f"{center_x:.1f}", kind=trace_kind, extremum="peak"))
         elif (
             center_y == segment_min
             and center_y <= left_y
@@ -110,25 +101,41 @@ def _detect_trace_extrema(
         ):
             prominence = abs(center_y - segment_max)
             if prominence >= min_prominence:
-                results.append(
-                    PeakResult(
-                        x=center_x,
-                        y=center_y,
-                        label=f"{center_x:.1f}",
-                        kind=trace_kind,
-                        extremum="valley",
-                    )
-                )
+                results.append(PeakResult(x=center_x, y=center_y, label=f"{center_x:.1f}", kind=trace_kind, extremum="valley"))
 
     return _dedupe_extrema(results, window)
+
+
+def detect_trace_extrema(
+    frame: pd.DataFrame,
+    y_column: str,
+    trace_kind: str,
+    span: float,
+    prominence_sigma: float = DEFAULT_PROMINENCE_SIGMA,
+) -> list[PeakResult]:
+    if frame.empty or "temp" not in frame.columns or y_column not in frame.columns:
+        return []
+
+    valid = frame.loc[:, ["temp", y_column]].dropna().reset_index(drop=True)
+    if len(valid.index) < 3:
+        return []
+
+    window = _half_window(len(valid.index), span)
+    return _detect_extrema_points(valid, y_column, trace_kind, window, prominence_sigma)
 
 
 def _dedupe_extrema(results: list[PeakResult], window: int) -> list[PeakResult]:
     if not results:
         return []
+    sorted_peaks = sorted(results, key=lambda item: (item.kind, item.extremum, item.x))
+    if len(sorted_peaks) >= 2:
+        x_spacing = (sorted_peaks[-1].x - sorted_peaks[0].x) / max(len(sorted_peaks) - 1, 1)
+    else:
+        x_spacing = 1.0
+
     deduped: list[PeakResult] = []
-    min_distance = max(window, 1)
-    for peak in sorted(results, key=lambda item: (item.kind, item.extremum, item.x)):
+    min_distance = max(window, 1) * max(x_spacing, 0.0)
+    for peak in sorted_peaks:
         if not deduped:
             deduped.append(peak)
             continue
@@ -148,6 +155,52 @@ def _dedupe_extrema(results: list[PeakResult], window: int) -> list[PeakResult]:
 
 def detect_peaks(frame: pd.DataFrame, settings: ProcessingSettings) -> list[PeakResult]:
     peaks: list[PeakResult] = []
-    peaks.extend(_detect_trace_extrema(frame, "deltatemp", "dta", settings.span))
-    peaks.extend(_detect_trace_extrema(frame, "dmdt", "dtg", settings.span))
+    peak_sigma = settings.peak_prominence_sigma
+    peaks.extend(detect_trace_extrema(frame, "deltatemp", "dta", settings.span, peak_sigma))
+    peaks.extend(detect_trace_extrema(frame, "dmdt", "dtg", settings.span, peak_sigma))
     return peaks
+
+
+def detect_tg_inflection_markers(frame: pd.DataFrame, peak_prominence_sigma: float, window: int | None = None) -> list[PeakResult]:
+    if frame.empty or not {"temp", "mass"}.issubset(frame.columns):
+        return []
+
+    valid_mass = frame.loc[:, ["temp", "mass"]].dropna().reset_index(drop=True)
+    if len(valid_mass.index) < 5:
+        return []
+
+    temp = valid_mass["temp"].to_numpy(dtype=float)
+    mass = valid_mass["mass"].to_numpy(dtype=float)
+    if np.any(np.diff(temp) <= 0):
+        slope = np.gradient(mass)
+    else:
+        slope = np.gradient(mass, temp)
+    slope_frame = pd.DataFrame({"temp": temp, "slope": slope, "mass": mass})
+    detection_window = window if window is not None else _raw_half_window(len(slope_frame.index))
+    slope_markers = _detect_extrema_points(slope_frame, "slope", "tg", min(detection_window, max(len(slope_frame.index) // 2, 1)), peak_prominence_sigma)
+    for marker in slope_markers:
+        marker_index = int(np.argmin(np.abs(temp - marker.x)))
+        marker.y = float(mass[marker_index])
+        marker.extremum = "inflection"
+    return slope_markers
+
+
+def detect_raw_plot_markers(frame: pd.DataFrame, settings: ThermogramViewSettings) -> list[PeakResult]:
+    if frame.empty or "temp" not in frame.columns:
+        return []
+
+    markers: list[PeakResult] = []
+    peak_sigma = settings.peak_prominence_sigma
+    window = _raw_half_window(len(frame.index))
+
+    if "deltatemp" in frame.columns:
+        valid_dta = frame.loc[:, ["temp", "deltatemp"]].dropna().reset_index(drop=True)
+        markers.extend(_detect_extrema_points(valid_dta, "deltatemp", "dta", min(window, max(len(valid_dta.index) // 2, 1)), peak_sigma))
+
+    if "dmdt" in frame.columns:
+        valid_dtg = frame.loc[:, ["temp", "dmdt"]].dropna().reset_index(drop=True)
+        markers.extend(_detect_extrema_points(valid_dtg, "dmdt", "dtg", min(window, max(len(valid_dtg.index) // 2, 1)), peak_sigma))
+
+    markers.extend(detect_tg_inflection_markers(frame, peak_sigma, window))
+
+    return markers

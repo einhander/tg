@@ -1,66 +1,87 @@
-<div class="tga2-tab settings-workspace">
-  <div class="settings-sidebar-zone">
-    <form id="tga2-form"
-          class="compact-panel compact-panel-section settings-form"
-          method="post"
-          action="{{ tga2_plot_url }}"
-          hx-post="{{ tga2_plot_url }}"
-          hx-target="#process-response"
-          hx-swap="innerHTML">
-      <div class="compact-panel-title">Настройки TGA2</div>
-      <div class="checkbox compact-checkbox">
-        <label>
-         <input id="tga2-sg-mode"
+<div class="thermogram-tab">
+  <form id="thermogram-form"
+        method="post"
+        action="{{ process_url }}"
+        hx-post="{{ process_url }}"
+        hx-trigger="change"
+        hx-target="#process-response"
+        hx-swap="innerHTML">
+    <div class="settings-workspace">
+      <div class="settings-sidebar-zone">
+      <div class="compact-panel compact-panel-section settings-form">
+        <div class="compact-panel-title">Параметры</div>
+
+        {% include "partials/heat_speed_block.html" %}
+
+        <div class="checkbox compact-checkbox">
+          <label>
+            <input type="hidden" name="sg_mode" value="0">
+            <input id="sg-mode"
                    name="sg_mode"
                    type="checkbox"
                    value="1"
-                   data-sg-toggle="tga2-sg-mass-controls,tga2-sg-temp-controls,tga2-sg-dtg-controls"
-                  {% if tga2_settings.sg_mode|default(False) %}checked{% endif %}>
-          Savitzky-Golay сглаживание
-        </label>
+                   data-sg-toggle="sg-controls"
+                   {% if settings.sg_mode|default(True) %}checked{% endif %}>
+            Savitzky-Golay сглаживание
+          </label>
+        </div>
+
+        <div class="sg-controls" id="sg-controls">
+          <div class="form-group compact-form-group">
+            <label for="sg-mass-window" class="control-label">SG Window (ТГ)</label>
+            <input id="sg-mass-window" name="sg_mass_window" type="range" min="3" max="51" step="2" value="{{ settings.sg_mass_window|default(11) }}" class="form-control range-control">
+            <div class="range-value">{{ settings.sg_mass_window|default(11) }}</div>
+          </div>
+
+          <div class="form-group compact-form-group">
+            <label for="sg-temp-window" class="control-label">SG Window (ДТА)</label>
+            <input id="sg-temp-window" name="sg_temp_window" type="range" min="3" max="51" step="2" value="{{ settings.sg_temp_window|default(11) }}" class="form-control range-control">
+            <div class="range-value">{{ settings.sg_temp_window|default(11) }}</div>
+          </div>
+
+          <div class="form-group compact-form-group">
+            <label for="sg-dtg-window" class="control-label">SG Window (ТГП)</label>
+            <input id="sg-dtg-window" name="sg_dtg_window" type="range" min="3" max="51" step="2" value="{{ settings.sg_dtg_window|default(11) }}" class="form-control range-control">
+            <div class="range-value">{{ settings.sg_dtg_window|default(11) }}</div>
+          </div>
+        </div>
+
+        <div class="form-group compact-form-group compact-form-group-last">
+          <label for="peak-prominence-sigma" class="control-label">Порог пиков (σ)</label>
+          <input id="peak-prominence-sigma" name="peak_prominence_sigma" type="range" min="1" max="10" step="0.5" value="{{ settings.peak_prominence_sigma|default(5.0) }}" class="form-control range-control">
+          <div class="range-value">{{ settings.peak_prominence_sigma|default(5.0) }}</div>
+        </div>
+
       </div>
-
-      <div class="form-group compact-form-group sg-controls" id="tga2-sg-mass-controls">
-        <label for="tga2-sg-mass-window" class="control-label">SG Window (масса)</label>
-        <input id="tga2-sg-mass-window" name="sg_mass_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_mass_window|default(11) }}" class="form-control range-control">
-        <div class="range-value">{{ tga2_settings.sg_mass_window|default(11) }}</div>
-      </div>
-
-      <div class="form-group compact-form-group sg-controls" id="tga2-sg-temp-controls">
-         <label for="tga2-sg-temp-window" class="control-label">SG Window (температура)</label>
-         <input id="tga2-sg-temp-window" name="sg_temp_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_temp_window|default(11) }}" class="form-control range-control">
-         <div class="range-value">{{ tga2_settings.sg_temp_window|default(11) }}</div>
-       </div>
-
-       <div class="form-group compact-form-group sg-controls" id="tga2-sg-dtg-controls">
-         <label for="tga2-sg-dtg-window" class="control-label">SG Window (ТГП)</label>
-         <input id="tga2-sg-dtg-window" name="sg_dtg_window" type="range" min="3" max="51" step="2" value="{{ tga2_settings.sg_dtg_window|default(11) }}" class="form-control range-control">
-         <div class="range-value">{{ tga2_settings.sg_dtg_window|default(11) }}</div>
-       </div>
-
-      <div class="visibility-grid">
-        <input type="hidden" name="show_tg" value="{{ 0 if tga2_settings.hide_tg|default(False) else 1 }}" data-visibility-hidden="show_tg">
-        <input type="hidden" name="show_dta" value="{{ 0 if tga2_settings.hide_dta|default(False) else 1 }}" data-visibility-hidden="show_dta">
-        <input type="hidden" name="show_dtg" value="{{ 0 if tga2_settings.hide_dtg|default(False) else 1 }}" data-visibility-hidden="show_dtg">
-
-        <label class="visibility-item">
-          <input type="checkbox" {% if not tga2_settings.hide_tg|default(False) %}checked{% endif %} data-visibility-toggle="show_tg"> ТГ
-        </label>
-        <label class="visibility-item">
-          <input type="checkbox" {% if not tga2_settings.hide_dta|default(False) %}checked{% endif %} data-visibility-toggle="show_dta"> ДТА
-        </label>
-        <label class="visibility-item">
-          <input type="checkbox" {% if not tga2_settings.hide_dtg|default(False) %}checked{% endif %} data-visibility-toggle="show_dtg"> ТГП
-        </label>
-        <button type="submit" class="btn btn-default btn-compact-inline">Обновить</button>
-      </div>
-    </form>
-  </div>
-
-  <div class="settings-main-zone">
-    <div class="compact-panel plot-dashboard-panel">
-      <div class="compact-panel-title">TGA2</div>
-      <div id="tga2-plot" class="main-plot" data-plot-json='{{ tga2_plot_json|e }}' data-plot-height="600px" style="height: 600px;"></div>
     </div>
-  </div>
+
+      <div class="settings-main-zone">
+        <div class="compact-panel plot-dashboard-panel">
+        <div class="compact-panel-title">Термограмма</div>
+
+        <div class="visibility-form">
+          <div class="visibility-grid">
+            <label class="visibility-item"><input type="hidden" name="hide_tg" value="0"><input id="hide-tg" name="hide_tg" type="checkbox" value="1" {% if settings.hide_tg|default(False) %}checked{% endif %}> ТГ</label>
+            <label class="visibility-item"><input type="hidden" name="hide_dta" value="0"><input id="hide-dta" name="hide_dta" type="checkbox" value="1" {% if settings.hide_dta|default(False) %}checked{% endif %}> ДТА</label>
+            <label class="visibility-item"><input type="hidden" name="hide_dtg" value="0"><input id="hide-dtg" name="hide_dtg" type="checkbox" value="1" {% if settings.hide_dtg|default(False) %}checked{% endif %}> ТГП</label>
+            <label class="visibility-item"><input type="hidden" name="hide_inflections_tg" value="0"><input id="hide-inflections-tg" name="hide_inflections_tg" type="checkbox" value="1" {% if settings.hide_inflections_tg|default(False) %}checked{% endif %}> Перегибы ТГ</label>
+            <label class="visibility-item"><input type="hidden" name="hide_peaks_dta" value="0"><input id="hide-peaks-dta" name="hide_peaks_dta" type="checkbox" value="1" {% if settings.hide_peaks_dta|default(False) %}checked{% endif %}> Пики ДТА</label>
+            <label class="visibility-item"><input type="hidden" name="hide_peaks_dmdt" value="0"><input id="hide-peaks-dmdt" name="hide_peaks_dmdt" type="checkbox" value="1" {% if settings.hide_peaks_dmdt|default(False) %}checked{% endif %}> Пики dmdt</label>
+          </div>
+        </div>
+
+        {% include "partials/plot_block.html" %}
+
+        <div class="settings-footer-grid">
+          <div class="button-row compact-button-row">
+            <a href="{{ export_plot_url }}" id="download-plot-button" class="btn btn-default">Скачать график</a>
+            <a href="{{ export_session_url }}" id="download-session-button" class="btn btn-default">Скачать CSV</a>
+          </div>
+
+          {% include "partials/effect_block.html" %}
+        </div>
+        </div>
+      </div>
+    </div>
+  </form>
 </div>

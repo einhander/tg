@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 
+import pandas as pd
+
 from tgapp.application.dto import PlotPayload, SessionStateDto, UiMessage, UploadPayload
 from tgapp.domain.models import CorrectionFile, ProcessingSettings, SummaryResult, ThermogramFile
 from tgapp.domain.peaks import detect_peaks
@@ -106,6 +108,22 @@ def import_saved_session(storage: SessionStorage, upload: UploadPayload) -> Sess
 
 def _load_thermogram_models(storage: SessionStorage, session_id: str) -> list[ThermogramFile]:
     return [ThermogramFile(name=name, frame=frame, source_kind="storage") for name, frame in storage.load_thermograms(session_id).items()]
+
+
+def load_raw_plot_frame(storage: SessionStorage, session_state: dict[str, object]) -> pd.DataFrame:
+    session_id = session_state.get("session_id") if isinstance(session_state, dict) else None
+    if not isinstance(session_id, str) or not session_id:
+        return pd.DataFrame()
+
+    raw_thermograms = storage.load_raw_thermograms(session_id)
+    if raw_thermograms:
+        return next(iter(raw_thermograms.values()))
+
+    thermograms = storage.load_thermograms(session_id)
+    if thermograms:
+        return next(iter(thermograms.values()))
+
+    return pd.DataFrame()
 
 
 def _load_correction_model(storage: SessionStorage, session_id: str) -> CorrectionFile | None:
