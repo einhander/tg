@@ -8,10 +8,9 @@ from fastapi import APIRouter, HTTPException, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
 
 from tgapp.application.dto import UploadPayload
-from tgapp.application.use_cases import get_plot_payload, import_saved_session, load_correction, load_thermograms
+from tgapp.application.use_cases import get_visible_thermogram_plot_json, import_saved_session, load_correction, load_thermograms
 from tgapp.application.view_models import page_context
-from tgapp.domain.models import ProcessingSettings
-from tgapp.infrastructure.plotting import build_main_plot, figure_to_json
+from tgapp.domain.models import ThermogramViewSettings
 from tgapp.web.deps import SESSION_COOKIE_NAME, ensure_session_cookie, get_config, get_or_create_session_state, get_processing_state, get_storage, get_templates, get_thermogram_settings
 
 router = APIRouter(prefix="/upload")
@@ -50,15 +49,14 @@ async def upload_thermograms(request: Request, response: Response):
     uploads = [await _to_payload(item) for item in thermograms]
     state = load_thermograms(storage, session_state, uploads)
     session_state = asdict(state)
-    processing_settings = ProcessingSettings(**get_processing_state(request, session_state).get("settings", {}))
-    plot_payload = get_plot_payload(storage, session_state, processing_settings)
-    plot_json = figure_to_json(build_main_plot(plot_payload))
+    thermogram_settings = get_thermogram_settings(request, session_state)
+    plot_json = get_visible_thermogram_plot_json(storage, session_state, ThermogramViewSettings(**thermogram_settings))
     context = page_context(
         request=request,
         base_path=get_config(request).public_base_path,
         session_state=session_state,
         processing_state=get_processing_state(request, session_state),
-        thermogram_settings=get_thermogram_settings(request, session_state),
+        thermogram_settings=thermogram_settings,
         plot_payload=json.loads(plot_json),
         upload_status={"message": f"Loaded {len(uploads)} thermogram file(s).", "status": state.status},
     )

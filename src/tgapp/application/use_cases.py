@@ -6,11 +6,12 @@ from pathlib import Path
 import pandas as pd
 
 from tgapp.application.dto import PlotPayload, SessionStateDto, UiMessage, UploadPayload
-from tgapp.domain.models import CorrectionFile, ProcessingSettings, SummaryResult, ThermogramFile
+from tgapp.domain.models import CorrectionFile, ProcessingSettings, SummaryResult, ThermogramFile, ThermogramViewSettings
 from tgapp.domain.peaks import detect_peaks
 from tgapp.domain.processing import process_thermograms
 from tgapp.domain.summary import build_effect_text
 from tgapp.infrastructure.file_parsers import decode_dash_upload, parse_correction_upload, parse_thermogram_uploads
+from tgapp.infrastructure.plotting import build_raw_plot, figure_to_json
 from tgapp.infrastructure.serialization import pack_session_directory, unpack_session_archive
 from tgapp.infrastructure.storage import SessionStorage
 
@@ -124,6 +125,14 @@ def load_raw_plot_frame(storage: SessionStorage, session_state: dict[str, object
         return next(iter(thermograms.values()))
 
     return pd.DataFrame()
+
+
+def get_visible_thermogram_plot_json(
+    storage: SessionStorage,
+    session_state: dict[str, object],
+    settings: ThermogramViewSettings,
+) -> str:
+    return figure_to_json(build_raw_plot(load_raw_plot_frame(storage, session_state), settings))
 
 
 def _load_correction_model(storage: SessionStorage, session_id: str) -> CorrectionFile | None:

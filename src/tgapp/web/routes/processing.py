@@ -6,10 +6,9 @@ from typing import Any, cast
 
 from fastapi import APIRouter, Form, Request, Response
 
-from tgapp.application.use_cases import get_plot_payload, process_session
+from tgapp.application.use_cases import get_visible_thermogram_plot_json, process_session
 from tgapp.application.view_models import page_context
 from tgapp.domain.models import ProcessingSettings, ThermogramViewSettings
-from tgapp.infrastructure.plotting import build_main_plot, figure_to_json
 from tgapp.web.deps import ensure_session_cookie, get_config, get_or_create_session_state, get_processing_state, get_storage, get_templates, get_thermogram_settings, save_thermogram_settings
 
 router = APIRouter()
@@ -100,8 +99,7 @@ def _build_form_values(
 
 def _render_process_response(request: Request, response: Response, session_state: dict[str, Any], processing_state: dict[str, Any], processing_settings: ProcessingSettings, thermogram_settings: ThermogramViewSettings):
     storage = get_storage(request)
-    plot_payload = get_plot_payload(storage, session_state, processing_settings)
-    plot_json_str = figure_to_json(build_main_plot(plot_payload))
+    plot_json_str = get_visible_thermogram_plot_json(storage, session_state, thermogram_settings)
     context = page_context(
         request=request,
         base_path=get_config(request).public_base_path,
