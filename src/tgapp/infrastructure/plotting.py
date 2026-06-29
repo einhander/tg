@@ -83,7 +83,7 @@ def _smooth_series_savgol(series: pd.Series, window: int, polyorder: int = 3) ->
     return smooth_series_savitzky_golay(series, window, polyorder)
 
 
-def _add_tg_inflection_markers(figure: go.Figure, peaks: list[dict], mass_scale: float, hide_inflections_tg: bool, hide_tg: bool = False) -> None:
+def _add_tg_inflection_markers(figure: go.Figure, peaks: list[dict], hide_inflections_tg: bool, hide_tg: bool = False) -> None:
     if hide_inflections_tg or hide_tg:
         return
 
@@ -92,7 +92,7 @@ def _add_tg_inflection_markers(figure: go.Figure, peaks: list[dict], mass_scale:
             continue
 
         peak_x = float(peak.get("x", 0.0))
-        peak_y = float(peak.get("y", 0.0)) * mass_scale
+        peak_y = float(peak.get("y", 0.0))
         figure.add_vline(x=peak_x, line_width=1, line_dash="dot", line_color=TG_TRACE_COLOR, opacity=0.3)
         figure.add_trace(
             go.Scatter(
@@ -113,19 +113,19 @@ def build_main_plot(payload: PlotPayload) -> go.Figure:
     figure = go.Figure()
     frame = pd.DataFrame(payload.frame_records)
     settings = payload.settings
-    mass_scale = _mass_scale(frame)
 
     if not frame.empty:
         if not settings.get("hide_tg", False) and {"temp", "mass"}.issubset(frame.columns):
             figure.add_trace(
                 go.Scatter(
                     x=frame["temp"],
-                    y=frame["mass"] * mass_scale,
+                    y=frame["mass"],
                     mode="lines",
                     name="ТГ",
                     line={"color": TG_TRACE_COLOR},
+                    yaxis="y2",
                     customdata=frame[["mass"]].to_numpy(),
-                    hovertemplate="Температура=%{x}<br>ТГ (масштаб)=%{y}<br>Масса=%{customdata[0]}<extra></extra>",
+                    hovertemplate="Температура=%{x}<br>Масса=%{customdata[0]}<extra></extra>",
                 )
             )
         if not settings.get("hide_dta", False) and {"temp", "deltatemp"}.issubset(frame.columns):
@@ -151,12 +151,42 @@ def build_main_plot(payload: PlotPayload) -> go.Figure:
     _add_tg_inflection_markers(
         figure,
         main_markers,
-        mass_scale,
         settings.get("hide_inflections_tg", False),
         settings.get("hide_tg", False),
     )
 
+    # Compute mass range for yaxis2
+    mass_range = None
+    if not frame.empty and "mass" in frame.columns:
+        mass_min = float(frame["mass"].min())
+        mass_max = float(frame["mass"].max())
+        mass_pad = (mass_max - mass_min) * 0.1 or 0.001
+        mass_range = [mass_min - mass_pad, mass_max + mass_pad]
+
+    # If TG is hidden, add an invisible anchor trace on y2 so the axis still renders
+    if settings.get("hide_tg", False) and mass_range is not None:
+        figure.add_trace(
+            go.Scatter(
+                x=[frame["temp"].iloc[0], frame["temp"].iloc[-1]],
+                y=[mass_range[0], mass_range[0]],
+                mode="lines",
+                line={"color": "rgba(0,0,0,0)"},
+                showlegend=False,
+                yaxis="y2",
+            )
+        )
+
     figure.add_hline(y=0.0, line_color="#dc2626", line_width=1, opacity=0.5)
+    yaxis2_cfg = {
+        "title": "Масса, г",
+        "overlaying": "y",
+        "side": "right",
+        "showgrid": False,
+        "tickmode": "auto",
+    }
+    if mass_range is not None:
+        yaxis2_cfg["range"] = mass_range
+
     figure.update_layout(
         title=payload.title or PLOT_TITLE,
         template="plotly_white",
@@ -166,22 +196,11 @@ def build_main_plot(payload: PlotPayload) -> go.Figure:
         yaxis_title="Разница температур, °C",
         xaxis={"gridcolor": "#e5e7eb", "zerolinecolor": "#d1d5db"},
         yaxis={"gridcolor": "#e5e7eb", "zerolinecolor": "#d1d5db"},
-        yaxis2={
-            "title": "Масса, г",
-            "overlaying": "y",
-            "side": "right",
-            "showgrid": False,
-            "tickmode": "auto",
-        },
+        yaxis2=yaxis2_cfg,
         legend={"x": 0.02, "y": 0.02, "xanchor": "left", "yanchor": "bottom", "bgcolor": "rgba(255,255,255,0.8)", "bordercolor": "#e5e7eb", "borderwidth": 1},
         plot_bgcolor="white",
         paper_bgcolor="white",
     )
-
-    if not frame.empty and mass_scale not in (0.0, 1.0) and {"mass", "deltatemp"}.issubset(frame.columns):
-        primary_ticks = figure.layout.yaxis.tickvals
-        if primary_ticks:
-            figure.update_layout(yaxis2={**figure.layout.yaxis2.to_plotly_json(), "tickvals": primary_ticks, "ticktext": [f"{tick / mass_scale:.3f}" for tick in primary_ticks]})
 
     return figure
 
@@ -198,13 +217,11 @@ def build_raw_plot(frame: pd.DataFrame, settings: ThermogramViewSettings | None 
         if "deltatemp" in plot_frame.columns:
             plot_frame["deltatemp"] = _smooth_series_savgol(plot_frame["deltatemp"], plot_settings.sg_temp_window)
 
-    mass_scale = _mass_scale(plot_frame)
-
     if not plot_settings.hide_tg and not plot_frame.empty and {"temp", "mass"}.issubset(plot_frame.columns):
         figure.add_trace(
             go.Scatter(
                 x=plot_frame["temp"],
-                y=plot_frame["mass"] * mass_scale,
+                y=plot_frame["mass"],
                 mode="lines",
                 name="ТГ",
                 line={"color": TG_TRACE_COLOR},
@@ -241,10 +258,41 @@ def build_raw_plot(frame: pd.DataFrame, settings: ThermogramViewSettings | None 
 
     raw_markers = [asdict(marker) for marker in detect_raw_plot_markers(plot_frame, plot_settings)]
     add_peak_markers(figure, raw_markers, asdict(plot_settings))
-    _add_tg_inflection_markers(figure, raw_markers, mass_scale, plot_settings.hide_inflections_tg, plot_settings.hide_tg)
+    _add_tg_inflection_markers(figure, raw_markers, plot_settings.hide_inflections_tg, plot_settings.hide_tg)
 
     # Update axis title when DTG is visible
     yaxis_title = "ДТА / ТГП (масштаб), °C" if not plot_settings.hide_dtg else "Разница температур, °C"
+
+    # Compute mass range for yaxis2
+    mass_range = None
+    if not plot_frame.empty and "mass" in plot_frame.columns:
+        mass_min = float(plot_frame["mass"].min())
+        mass_max = float(plot_frame["mass"].max())
+        mass_pad = (mass_max - mass_min) * 0.1 or 0.001
+        mass_range = [mass_min - mass_pad, mass_max + mass_pad]
+
+    # If TG is hidden, add an invisible anchor trace on y2 so the axis still renders
+    if plot_settings.hide_tg and mass_range is not None:
+        figure.add_trace(
+            go.Scatter(
+                x=[plot_frame["temp"].iloc[0], plot_frame["temp"].iloc[-1]],
+                y=[mass_range[0], mass_range[0]],
+                mode="lines",
+                line={"color": "rgba(0,0,0,0)"},
+                showlegend=False,
+                yaxis="y2",
+            )
+        )
+
+    yaxis2_cfg = {
+        "title": "Масса, г",
+        "overlaying": "y",
+        "side": "right",
+        "showgrid": False,
+        "tickmode": "auto",
+    }
+    if mass_range is not None:
+        yaxis2_cfg["range"] = mass_range
 
     figure.update_layout(
         title=PLOT_TITLE,
@@ -255,22 +303,11 @@ def build_raw_plot(frame: pd.DataFrame, settings: ThermogramViewSettings | None 
         yaxis_title=yaxis_title,
         xaxis={"gridcolor": "#e5e7eb", "zerolinecolor": "#d1d5db"},
         yaxis={"gridcolor": "#e5e7eb", "zerolinecolor": "#d1d5db"},
-        yaxis2={
-            "title": "Масса, г",
-            "overlaying": "y",
-            "side": "right",
-            "showgrid": False,
-            "tickmode": "auto",
-        },
+        yaxis2=yaxis2_cfg,
         legend={"x": 0.02, "y": 0.98, "xanchor": "left", "yanchor": "top", "bgcolor": "rgba(255,255,255,0.8)", "bordercolor": "#e5e7eb", "borderwidth": 1},
         plot_bgcolor="white",
         paper_bgcolor="white",
     )
-
-    if not plot_frame.empty and mass_scale not in (0.0, 1.0) and {"mass", "deltatemp"}.issubset(plot_frame.columns):
-        primary_ticks = figure.layout.yaxis.tickvals
-        if primary_ticks:
-            figure.update_layout(yaxis2={**figure.layout.yaxis2.to_plotly_json(), "tickvals": primary_ticks, "ticktext": [f"{tick / mass_scale:.3f}" for tick in primary_ticks]})
     return figure
 
 
@@ -299,6 +336,10 @@ def figure_to_json(figure: go.Figure) -> str:
             "x": trace.x.tolist() if isinstance(trace.x, np.ndarray) else list(trace.x),
             "y": trace.y.tolist() if isinstance(trace.y, np.ndarray) else list(trace.y),
         }
+        if hasattr(trace, "yaxis"):
+            yaxis_val = trace.yaxis
+            if yaxis_val and yaxis_val != "y1":
+                trace_dict["yaxis"] = yaxis_val
         if hasattr(trace, "customdata") and trace.customdata is not None:
             trace_dict["customdata"] = trace.customdata.tolist() if isinstance(trace.customdata, np.ndarray) else list(trace.customdata)
         if hasattr(trace, "hovertemplate") and trace.hovertemplate:

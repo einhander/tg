@@ -62,11 +62,22 @@
     var layout = Object.assign({}, figure.layout || {});
     var config = Object.assign({responsive: true}, figure.config || {});
 
+    if (element.classList.contains("js-plotly-plot")) {
+      Plotly.react(element, figure.data || [], layout, config);
+      return;
+    }
+
     Plotly.newPlot(element, figure.data || [], layout, config);
   }
 
   function resizePlot(element) {
     if (!element || typeof Plotly === "undefined" || !element.classList.contains("js-plotly-plot")) {
+      return;
+    }
+
+    // Only resize if the plot is actually visible (not in a hidden tab)
+    var style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden') {
       return;
     }
 
@@ -83,6 +94,42 @@
 
     var plots = scope.querySelectorAll ? scope.querySelectorAll(".main-plot") : [];
     plots.forEach(resizePlot);
+  }
+
+  function collectPlots(root) {
+    var scope = root || document;
+    var plots = [];
+
+    if (scope.classList && scope.classList.contains("main-plot") && scope.getAttribute("data-plot-json")) {
+      plots.push(scope);
+    }
+
+    if (scope.querySelectorAll) {
+      scope.querySelectorAll(".main-plot[data-plot-json]").forEach(function (plot) {
+        plots.push(plot);
+      });
+    }
+
+    return plots;
+  }
+
+  function scheduleAfterLayout(callback) {
+    window.requestAnimationFrame(function () {
+      window.requestAnimationFrame(callback);
+    });
+  }
+
+  function schedulePlotUpdate(plots) {
+    if (!plots.length) {
+      return;
+    }
+
+    scheduleAfterLayout(function () {
+      plots.forEach(function (plot) {
+        renderPlot(plot);
+        resizePlot(plot);
+      });
+    });
   }
 
   function observePlotContainers(root) {
@@ -117,12 +164,7 @@
   }
 
   function renderPlots(root) {
-    var scope = root || document;
-    if (scope.classList && scope.classList.contains("main-plot") && scope.getAttribute("data-plot-json")) {
-      renderPlot(scope);
-    }
-    var plots = scope.querySelectorAll(".main-plot[data-plot-json]");
-    plots.forEach(renderPlot);
+    schedulePlotUpdate(collectPlots(root));
   }
 
   function bindTabs(root) {
@@ -251,13 +293,31 @@
     observePlotContainers(root);
   }
 
+  function getPostSwapRoot(event) {
+    if (event.detail && event.detail.elt) {
+      return event.detail.elt;
+    }
+
+    return event.target;
+  }
+
+  function handlePostSwap(event) {
+    var root = getPostSwapRoot(event);
+    init(root);
+
+    var target = event.detail && event.detail.target ? event.detail.target : null;
+    if (target && target !== root) {
+      schedulePlotUpdate(collectPlots(target));
+      observePlotContainers(target);
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     init(document);
   });
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
-    init(event.target);
-    resizePlots(event.target);
+    handlePostSwap(event);
   });
 
   window.addEventListener("resize", function () {
