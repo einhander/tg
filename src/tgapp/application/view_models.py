@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from tgapp.application.use_cases import get_heat_speed_text, get_summary
 from tgapp.domain.models import ProcessingSettings
+from tgapp.domain.summary import build_heat_speed_text
 from tgapp.infrastructure.serialization import to_json
 
 
@@ -38,18 +38,24 @@ def session_view_model(session_state: dict[str, Any]) -> dict[str, Any]:
 def processing_view_model(processing_state: dict[str, Any]) -> dict[str, Any]:
     settings = processing_state.get("settings", {}) if isinstance(processing_state, dict) else {}
     settings_model = ProcessingSettings(**settings) if isinstance(settings, dict) else ProcessingSettings()
-    summary = get_summary(processing_state)
+    summary = processing_state.get("summary", {}) if isinstance(processing_state, dict) else {}
     settings_dict = asdict(settings_model)
     return {
         **settings_dict,
         "settings": asdict(settings_model),
         "processed_ready": bool(processing_state.get("processed_ready")) if isinstance(processing_state, dict) else False,
-        "summary": processing_state.get("summary", {}) if isinstance(processing_state, dict) else {},
-        "summary_lines": summary.lines,
-        "summary_metrics": summary.metrics,
-        "heat_speed_text": get_heat_speed_text(processing_state),
+        "summary": summary,
+        "summary_lines": summary.get("lines", []) if isinstance(summary, dict) else [],
+        "summary_metrics": summary.get("metrics", {}) if isinstance(summary, dict) else {},
+        "heat_speed_text": _get_heat_speed_text(processing_state),
         "effect_text": str(processing_state.get("effect_text", "Effect: select a temperature interval")) if isinstance(processing_state, dict) else "Effect: select a temperature interval",
     }
+
+
+def _get_heat_speed_text(processing_state: dict[str, Any]) -> str:
+    """Extract heat speed text from processing state."""
+    text = processing_state.get("heat_speed_text") if isinstance(processing_state, dict) else None
+    return str(text) if text else "Скорость нагрева: недоступна"
 
 
 def page_context(*, request: Any, base_path: str, session_state: dict[str, Any], processing_state: dict[str, Any], plot_payload: dict[str, Any] | None = None, upload_status: dict[str, Any] | None = None, effect_text: str | None = None, thermogram_settings: dict[str, Any] | None = None) -> dict[str, Any]:

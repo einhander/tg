@@ -2,20 +2,13 @@ from __future__ import annotations
 
 import base64
 import io
-from dataclasses import dataclass
 
 import pandas as pd
 
 from tgapp.application.dto import UploadPayload
+from tgapp.application.ports import DecodedUpload
 from tgapp.domain.models import CorrectionFile, ThermogramFile
 from tgapp.domain.thermogram import normalize_thermogram_frame
-
-
-@dataclass(slots=True)
-class DecodedUpload:
-    filename: str
-    content_type: str
-    raw_bytes: bytes
 
 
 def decode_upload(upload: UploadPayload) -> DecodedUpload:
