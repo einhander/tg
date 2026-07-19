@@ -123,7 +123,7 @@ Sample data lives in `samples/` (various TGA formats).
 
 Managed by **uv** (`uv.lock`). Python ≥3.10.
 
-Key deps: dash, fastapi, plotly, pandas, numpy, jinja2, uvicorn, python-multipart.
+Key deps: fastapi, plotly, pandas, numpy, scipy, jinja2, uvicorn, python-multipart.
 
 ## Package layout
 
