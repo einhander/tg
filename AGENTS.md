@@ -28,7 +28,7 @@ APP_BASE_PATH=/tg uv run tgapp
 uv run python -m compileall src
 
 # Restart server cleanly
-pkill -9 -f "python -m tgapp.main" 2>/dev/null; sleep 1
+pkill -9 -f "python -m tgapp.main"; sleep 1
 uv run python -m tgapp.main > /tmp/tgapp.log 2>&1 &
 
 # Verify server is listening
@@ -37,8 +37,8 @@ ss -ltnp | grep ':8050' || true
 
 ## Real-file smoke test
 
-Sample: `samples/Сосна/Сосна 600_10_250мг.dat` → 1000 rows, heat speed ~9.8 K/min.
-Expected workflow: upload `.dat` → click "Обработать" → plot renders → brush effect → export `.tg`.
+Sample: `samples/Береза/Береза600_10_3140.dat` → 1000 rows, heat speed ~9.8 K/min.
+Expected workflow: upload `.dat` → click "Обработать" → plot renders → click checkbox.
 
 ## Architecture
 

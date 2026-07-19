@@ -49,25 +49,24 @@
 
   function renderPlot(element) {
     if (!element || typeof Plotly === "undefined") {
-      return;
+      return Promise.resolve();
     }
 
     var payload = parsePlotJson(element.getAttribute("data-plot-json"));
     var figure = normalizeFigure(payload);
     if (!figure) {
       element.innerHTML = "";
-      return;
+      return Promise.resolve();
     }
 
     var layout = Object.assign({}, figure.layout || {});
     var config = Object.assign({responsive: true}, figure.config || {});
 
     if (element.classList.contains("js-plotly-plot")) {
-      Plotly.react(element, figure.data || [], layout, config);
-      return;
+      return Plotly.react(element, figure.data || [], layout, config);
     }
 
-    Plotly.newPlot(element, figure.data || [], layout, config);
+    return Plotly.newPlot(element, figure.data || [], layout, config);
   }
 
   function resizePlot(element) {
@@ -77,12 +76,20 @@
 
     // Only resize if the plot is actually visible (not in a hidden tab)
     var style = window.getComputedStyle(element);
-    if (style.display === 'none' || style.visibility === 'hidden') {
+    if (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      !element.isConnected ||
+      element.clientWidth === 0 ||
+      element.clientHeight === 0
+    ) {
       return;
     }
 
     window.requestAnimationFrame(function () {
-      Plotly.Plots.resize(element);
+      Promise.resolve(Plotly.Plots.resize(element)).catch(function () {
+        // Plotly can reject while a just-swapped plot is still settling.
+      });
     });
   }
 
@@ -126,8 +133,9 @@
 
     scheduleAfterLayout(function () {
       plots.forEach(function (plot) {
-        renderPlot(plot);
-        resizePlot(plot);
+        Promise.resolve(renderPlot(plot)).then(function () {
+          resizePlot(plot);
+        });
       });
     });
   }
