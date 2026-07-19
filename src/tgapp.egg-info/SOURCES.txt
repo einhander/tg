@@ -28,12 +28,7 @@ src/tgapp/infrastructure/serialization.py
 src/tgapp/infrastructure/storage.py
 src/tgapp/web/__init__.py
 src/tgapp/web/app.py
-src/tgapp/web/app_factory.py
 src/tgapp/web/deps.py
-src/tgapp/web/layout.py
-src/tgapp/web/callbacks/__init__.py
-src/tgapp/web/callbacks/exports.py
-src/tgapp/web/callbacks/uploads.py
 src/tgapp/web/routes/__init__.py
 src/tgapp/web/routes/effects.py
 src/tgapp/web/routes/exports.py

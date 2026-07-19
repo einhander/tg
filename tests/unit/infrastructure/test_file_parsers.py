@@ -8,7 +8,7 @@ import pytest
 from tgapp.application.dto import UploadPayload
 from tgapp.infrastructure.file_parsers import (
     _read_frame,
-    decode_dash_upload,
+    decode_upload,
     parse_thermogram_uploads,
 )
 
@@ -51,25 +51,25 @@ class TestReadFrame:
         assert result.empty
 
 
-class TestDecodeDashUpload:
-    """decode_dash_upload."""
+class TestDecodeUpload:
+    """decode_upload."""
 
     def test_base64_content(self):
-        """Base64-encoded content (Dash format) → decoded bytes."""
+        """Base64-encoded content → decoded bytes."""
         import base64
         original = b"hello world"
         encoded = base64.b64encode(original).decode("ascii")
-        # Dash format: "data:<type>;base64,<encoded>"
+        # Format: "data:<type>;base64,<encoded>"
         content = f"data:text/plain;base64,{encoded}"
         upload = UploadPayload(filename="test.txt", content_type="text/plain", content=content)
-        result = decode_dash_upload(upload)
+        result = decode_upload(upload)
         assert result.raw_bytes == original
         assert result.filename == "test.txt"
 
     def test_empty_content(self):
         """No content → empty bytes."""
         upload = UploadPayload(filename="empty.dat")
-        result = decode_dash_upload(upload)
+        result = decode_upload(upload)
         assert result.raw_bytes == b""
 
 
@@ -81,7 +81,7 @@ class TestParseThermogramUploads:
         import base64
         csv_data = "temp;deltatemp;time;mass\n15.0;0.5;0.04;100.0\n16.0;0.6;0.08;99.5"
         encoded = base64.b64encode(csv_data.encode("utf-8")).decode("ascii")
-        # Dash format: "data:<type>;base64,<encoded>"
+        # Format: "data:<type>;base64,<encoded>"
         content = f"data:text/plain;base64,{encoded}"
         upload = UploadPayload(filename="test.dat", content_type="text/plain", content=content)
         result = parse_thermogram_uploads([upload])

@@ -18,7 +18,7 @@ class DecodedUpload:
     raw_bytes: bytes
 
 
-def decode_dash_upload(upload: UploadPayload) -> DecodedUpload:
+def decode_upload(upload: UploadPayload) -> DecodedUpload:
     if not upload.content:
         return DecodedUpload(filename=upload.filename or "upload", content_type=upload.content_type or "", raw_bytes=b"")
     _, _, encoded = upload.content.partition(",")
@@ -70,13 +70,13 @@ def _normalize_columns(frame: pd.DataFrame) -> pd.DataFrame:
 def parse_thermogram_uploads(uploads: list[UploadPayload]) -> list[ThermogramFile]:
     parsed: list[ThermogramFile] = []
     for upload in uploads:
-        decoded = decode_dash_upload(upload)
+        decoded = decode_upload(upload)
         frame = _normalize_columns(_read_frame(decoded.raw_bytes))
         parsed.append(ThermogramFile(name=decoded.filename, frame=frame, metadata={"content_type": decoded.content_type}))
     return parsed
 
 
 def parse_correction_upload(upload: UploadPayload) -> CorrectionFile:
-    decoded = decode_dash_upload(upload)
+    decoded = decode_upload(upload)
     frame = _normalize_columns(_read_frame(decoded.raw_bytes))
     return CorrectionFile(name=decoded.filename, frame=frame, metadata={"content_type": decoded.content_type})

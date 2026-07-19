@@ -10,7 +10,7 @@ from tgapp.domain.models import CorrectionFile, ProcessingSettings, SummaryResul
 from tgapp.domain.peaks import detect_peaks
 from tgapp.domain.processing import process_thermograms
 from tgapp.domain.summary import build_effect_text
-from tgapp.infrastructure.file_parsers import decode_dash_upload, parse_correction_upload, parse_thermogram_uploads
+from tgapp.infrastructure.file_parsers import decode_upload, parse_correction_upload, parse_thermogram_uploads
 from tgapp.infrastructure.plotting import build_raw_plot, figure_to_json
 from tgapp.infrastructure.serialization import pack_session_directory, unpack_session_archive
 from tgapp.infrastructure.storage import SessionStorage
@@ -90,7 +90,7 @@ def load_correction(storage: SessionStorage, session_state: dict[str, object], u
 
 def import_saved_session(storage: SessionStorage, upload: UploadPayload) -> SessionStateDto:
     session = create_session(storage)
-    decoded = decode_dash_upload(upload)
+    decoded = decode_upload(upload)
     archive_path = storage.session_dir(session.session_id or "") / "import.tg"
     archive_path.write_bytes(decoded.raw_bytes)
     unpack_session_archive(archive_path, storage.session_dir(session.session_id or ""))
