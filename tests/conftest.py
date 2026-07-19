@@ -47,9 +47,9 @@ def processing_settings() -> ProcessingSettings:
 
 @pytest.fixture
 def client():
-    """httpx.TestClient for the FastAPI app."""
-    import httpx
+    """TestClient for the FastAPI app."""
+    from fastapi.testclient import TestClient
 
     app = create_app()
-    with httpx.TestClient(app) as test_client:
+    with TestClient(app) as test_client:
         yield test_client
