@@ -33,8 +33,6 @@ src/tgapp/web/deps.py
 src/tgapp/web/layout.py
 src/tgapp/web/callbacks/__init__.py
 src/tgapp/web/callbacks/exports.py
-src/tgapp/web/callbacks/plots.py
-src/tgapp/web/callbacks/processing.py
 src/tgapp/web/callbacks/uploads.py
 src/tgapp/web/routes/__init__.py
 src/tgapp/web/routes/effects.py

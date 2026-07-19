@@ -4,13 +4,19 @@ Version: 0.1.0
 Summary: Dash migration skeleton for the tg.app Shiny application
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: dash>=2.17
 Requires-Dist: fastapi>=0.111
 Requires-Dist: jinja2>=3.1
 Requires-Dist: plotly>=5.22
 Requires-Dist: pandas>=2.2
 Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: scipy>=1.12
+Requires-Dist: numpy>=1.26
 Requires-Dist: uvicorn>=0.30
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"
+Requires-Dist: ruff>=0.6; extra == "dev"
 
 # tg.app Python migration skeleton
 
