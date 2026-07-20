@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
+import shutil
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from tgapp.application.ports import SessionArchiveService, SessionRepository
 from tgapp.application.use_cases import export_session
@@ -63,16 +63,19 @@ def export_session_route(request: Request, response: Response):
     archive_name = f"{sid}.tg"
 
     # PLAN_AUDIT §16.3: create archive outside session directory
-    with tempfile.TemporaryDirectory() as tmpdir:
+    tmpdir = tempfile.mkdtemp()
+    try:
         tmp_archive = Path(tmpdir) / archive_name
         _archive_service().pack_session_directory(session_dir, tmp_archive)
+        archive_bytes = tmp_archive.read_bytes()
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
-        # Serve the temp file, then let TemporaryDirectory clean it up
-        return FileResponse(
-            path=tmp_archive,
-            filename=archive_name,
-            media_type="application/octet-stream",
-        )
+    return Response(
+        content=archive_bytes,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={archive_name}"},
+    )
 
 
 @router.get("/plot", name="export_plot")
