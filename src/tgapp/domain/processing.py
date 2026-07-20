@@ -7,7 +7,14 @@ import pandas as pd
 
 from tgapp.domain.models import CorrectionFile, PeakResult, ProcessingSettings, ThermogramFile, ThermogramProcessed
 from tgapp.domain.peaks import detect_peaks
-from tgapp.domain.smoothing import smooth_column_savitzky_golay, smooth_derivative, smooth_mass, smooth_temperature
+from tgapp.domain.smoothing import (
+    smooth_column_savitzky_golay,
+    smooth_derivative,
+    smooth_derivative_savitzky_golay,
+    smooth_mass,
+    smooth_temperature,
+    smooth_temperature_savitzky_golay,
+)
 from tgapp.domain.summary import build_heat_speed_text, build_summary
 from tgapp.domain.thermogram import combine_thermograms, compute_mean_correction, compute_mean_traces, resample_thermogram
 
@@ -116,8 +123,17 @@ def process_thermograms(
     if settings.sg_mode:
         mean_frame = smooth_column_savitzky_golay(mean_frame, "deltatemp", settings.sg_window, settings.sg_polyorder)
 
-    mean_frame = smooth_temperature(mean_frame, settings.temp_smoothing)
-    mean_frame = smooth_derivative(mean_frame, settings.span, settings.smooth_dmdt)
+    # SG smoothing for temperature if enabled
+    if settings.sg_mode:
+        mean_frame = smooth_temperature_savitzky_golay(mean_frame, settings.sg_window, settings.sg_polyorder)
+    else:
+        mean_frame = smooth_temperature(mean_frame, settings.temp_smoothing)
+
+    # SG smoothing for derivative if enabled
+    if settings.sg_mode:
+        mean_frame = smooth_derivative_savitzky_golay(mean_frame, settings.sg_window, settings.sg_polyorder)
+    else:
+        mean_frame = smooth_derivative(mean_frame, settings.span, settings.smooth_dmdt)
 
     # Detect peaks on unrounded data for stable extrema detection
     peaks = detect_peaks(mean_frame, settings)

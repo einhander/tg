@@ -40,6 +40,16 @@ def smooth_mass_savitzky_golay(frame: pd.DataFrame, window: int, polyorder: int)
     return smooth_column_savitzky_golay(frame, "mass", window, polyorder)
 
 
+def smooth_temperature_savitzky_golay(frame: pd.DataFrame, window: int, polyorder: int = 3) -> pd.DataFrame:
+    """Savitzky-Golay smoothing for temperature column."""
+    return smooth_column_savitzky_golay(frame, "temp", window, polyorder)
+
+
+def smooth_derivative_savitzky_golay(frame: pd.DataFrame, window: int, polyorder: int = 3) -> pd.DataFrame:
+    """Savitzky-Golay smoothing for DTG (dmdt) column."""
+    return smooth_column_savitzky_golay(frame, "dmdt", window, polyorder)
+
+
 def _savgol_values(values: np.ndarray, window: int, polyorder: int) -> np.ndarray:
     n = len(values)
     if n < 3:
@@ -55,33 +65,11 @@ def _savgol_values(values: np.ndarray, window: int, polyorder: int) -> np.ndarra
 
     pord = min(max(polyorder, 1), win - 2)
 
+    from scipy.signal import savgol_filter
     try:
-        from scipy.signal import savgol_filter
         return savgol_filter(values, win, pord)
-    except ImportError:
-        return _savgol_fallback(values, win, pord)
     except ValueError:
         return values.copy()
-
-
-def _savgol_fallback(y: np.ndarray, window: int, polyorder: int) -> np.ndarray:
-    """Manual Savitzky-Golay when scipy is unavailable."""
-    n = len(y)
-    result = y.copy()
-    half = window // 2
-
-    for i in range(n):
-        lo = max(0, i - half)
-        hi = min(n, i + half + 1)
-        x = np.arange(hi - lo, dtype=float)
-        segment = y[lo:hi]
-        try:
-            coeffs = np.polyfit(x, segment, polyorder)
-            result[i] = np.polyval(coeffs, x[len(segment) // 2])
-        except np.linalg.LinAlgError:
-            result[i] = y[i]
-
-    return result
 
 
 def smooth_temperature(frame: pd.DataFrame, window: int) -> pd.DataFrame:

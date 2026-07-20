@@ -7,12 +7,15 @@ import pandas as pd
 import pytest
 
 from tgapp.domain.smoothing import (
+    _savgol_values,
     smooth_column_savitzky_golay,
     smooth_derivative,
+    smooth_derivative_savitzky_golay,
     smooth_mass,
     smooth_mass_savitzky_golay,
     smooth_series_savitzky_golay,
     smooth_temperature,
+    smooth_temperature_savitzky_golay,
 )
 
 
@@ -158,3 +161,107 @@ class TestSmoothMassSavitzkyGolay:
         assert "mass" in result.columns
         # Linear data with SG polyorder=2 should be very close to original
         assert np.allclose(result["mass"].to_numpy(), df["mass"].to_numpy(), atol=1e-10)
+
+
+class TestSavgolValues:
+    """Direct tests for _savgol_values (scipy.signal.savgol_filter wrapper)."""
+
+    def test_constant_preserved(self):
+        """Константа после SG сглаживания остаётся константой."""
+        values = np.full(50, 100.0)
+        result = _savgol_values(values, window=5, polyorder=2)
+        assert np.allclose(result, 100.0)
+
+    def test_linear_preserved(self):
+        """Линейная функция не искажается SG с полиномом 2+ порядка."""
+        x = np.linspace(0, 100, 100)
+        values = 2.0 * x + 5.0
+        result = _savgol_values(values, window=5, polyorder=2)
+        assert np.allclose(result, values, atol=0.01)
+
+    def test_quadratic_preserved(self):
+        """Квадратичная функция сохраняется SG с полиномом 2."""
+        x = np.linspace(0, 100, 100)
+        values = 0.01 * x ** 2 + 2.0 * x + 5.0
+        result = _savgol_values(values, window=5, polyorder=2)
+        assert np.allclose(result, values, atol=0.1)
+
+    def test_even_window_made_odd(self):
+        """Чётное окно превращается в нечётное."""
+        values = np.random.randn(50)
+        result = _savgol_values(values, window=6, polyorder=2)
+        assert len(result) == 50
+
+    def test_window_too_small_returns_copy(self):
+        """Окно < 3 → win принудительно 3, savgol_filter вызывается, значения близки."""
+        values = np.array([1.0, 2.0, 3.0])
+        result = _savgol_values(values, window=2, polyorder=1)
+        # win принудительно 3 → savgol_filter([1,2,3], 3, 1) → [1,2,3]
+        assert np.allclose(result, values)
+
+    def test_scipy_imported(self):
+        """scipy.signal.savgol_filter импортируется."""
+        from scipy.signal import savgol_filter
+        assert savgol_filter is not None
+
+    def test_nan_gaps_not_interpolated(self):
+        """savgol_filter бросает ValueError на NaN → fallback на copy."""
+        values = np.array([1.0, 2.0, np.nan, np.nan, 5.0, 6.0, 7.0])
+        result = _savgol_values(values, window=3, polyorder=1)
+        # scipy savgol_filter не принимает NaN → ValueError → возвращает copy оригинала
+        assert np.array_equal(result, values, equal_nan=True)
+
+
+class TestSmoothTemperatureSavitzkyGolay:
+    """smooth_temperature_savitzky_golay convenience wrapper."""
+
+    def test_smoothes_temp_column(self):
+        """Temperature column gets SG smoothed."""
+        df = pd.DataFrame({
+            "temp": [float(i) for i in range(21)],
+            "mass": range(21),
+        })
+        result = smooth_temperature_savitzky_golay(df, window=5, polyorder=2)
+        assert "temp" in result.columns
+        assert "mass" in result.columns
+        # Linear data with SG polyorder=2 should be very close to original
+        assert np.allclose(result["temp"].to_numpy(), df["temp"].to_numpy(), atol=1e-10)
+
+    def test_missing_temp_column_no_change(self):
+        """No temp column → frame unchanged."""
+        df = pd.DataFrame({"mass": [1.0, 2.0, 3.0]})
+        result = smooth_temperature_savitzky_golay(df, window=5, polyorder=2)
+        assert list(result.columns) == ["mass"]
+
+    def test_empty_frame(self):
+        """Empty frame → unchanged."""
+        df = pd.DataFrame(columns=["temp", "mass"])
+        result = smooth_temperature_savitzky_golay(df, window=5, polyorder=2)
+        assert result.empty
+
+
+class TestSmoothDerivativeSavitzkyGolay:
+    """smooth_derivative_savitzky_golay convenience wrapper."""
+
+    def test_smoothes_dmdt_column(self):
+        """DTG column gets SG smoothed."""
+        n = 50
+        df = pd.DataFrame({
+            "temp": [float(i) for i in range(n)],
+            "dmdt": [float(i) * 0.1 for i in range(n)],
+        })
+        result = smooth_derivative_savitzky_golay(df, window=5, polyorder=2)
+        assert "dmdt" in result.columns
+        assert "temp" in result.columns
+
+    def test_missing_dmdt_column_no_change(self):
+        """No dmdt column → frame unchanged."""
+        df = pd.DataFrame({"temp": [1.0, 2.0, 3.0]})
+        result = smooth_derivative_savitzky_golay(df, window=5, polyorder=2)
+        assert list(result.columns) == ["temp"]
+
+    def test_empty_frame(self):
+        """Empty frame → unchanged."""
+        df = pd.DataFrame(columns=["temp", "dmdt"])
+        result = smooth_derivative_savitzky_golay(df, window=5, polyorder=2)
+        assert result.empty
