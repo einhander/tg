@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import tempfile
 import uuid
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+# PLAN_AUDIT §16.1: session ID must be full UUID hex (32 chars)
+_SESSION_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+
+
+def validate_session_id(session_id: str) -> bool:
+    """Return True if *session_id* is a valid 32-char lowercase hex string."""
+    return bool(_SESSION_ID_RE.match(session_id))
 
 
 class SessionStorage:
@@ -18,13 +29,22 @@ class SessionStorage:
         return self.root
 
     def create_session(self) -> str:
-        session_id = uuid.uuid4().hex[:12]
+        # PLAN_AUDIT §16.1: full UUID hex (32 chars) instead of 12-char truncation
+        session_id = uuid.uuid4().hex  # 32 chars
         self.session_dir(session_id).mkdir(parents=True, exist_ok=True)
         return session_id
 
     def session_dir(self, session_id: str) -> Path:
-        safe = session_id.replace("/", "_")
-        return self.ensure() / safe
+        # PLAN_AUDIT §16.1: reject unsafe session IDs before touching filesystem
+        if not validate_session_id(session_id):
+            raise ValueError(
+                f"Invalid session_id: must be 32-char lowercase hex, got {session_id!r}"
+            )
+        resolved = self.ensure().resolve() / session_id
+        # Ensure the resolved path stays inside APP_SESSION_DIR
+        if not str(resolved.resolve()).startswith(str(resolved.parent.resolve()) + os.sep) and resolved.resolve() != resolved.parent.resolve():
+            raise ValueError(f"Session path escapes APP_SESSION_DIR: {session_id}")
+        return resolved
 
     def thermogram_dir(self, session_id: str) -> Path:
         path = self.session_dir(session_id) / "thermograms"
@@ -59,8 +79,20 @@ class SessionStorage:
         return self.session_dir(session_id) / "plot-data.csv"
 
     def save_frame(self, path: Path, frame: pd.DataFrame) -> Path:
+        """Save DataFrame atomically (write to temp → os.replace)."""
+        path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        frame.to_csv(path, index=False)
+        fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+                frame.to_csv(tmp_file, index=False)
+            os.replace(tmp_path, path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
         return path
 
     def load_frame(self, path: Path) -> pd.DataFrame:
@@ -69,9 +101,21 @@ class SessionStorage:
         return pd.read_csv(path)
 
     def save_json(self, path: Path, data: Any) -> Path:
+        """Save JSON atomically (write to temp → os.replace)."""
+        path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = asdict(data) if is_dataclass(data) and not isinstance(data, type) else data
-        path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+                tmp_file.write(json.dumps(payload, indent=2, default=str))
+            os.replace(tmp_path, path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
         return path
 
     def load_json(self, path: Path) -> dict[str, Any]:

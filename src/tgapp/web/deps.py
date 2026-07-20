@@ -9,7 +9,7 @@ from tgapp.application.session_state import create_default_processing_state, cre
 from tgapp.application.use_cases import create_session
 from tgapp.config import AppConfig
 from tgapp.domain.models import ThermogramViewSettings
-from tgapp.infrastructure.storage import SessionStorage
+from tgapp.infrastructure.storage import SessionStorage, validate_session_id
 
 SESSION_COOKIE_NAME = "tgapp_session_id"
 
@@ -42,20 +42,35 @@ def _session_state_from_storage(storage: SessionStorage, session_id: str) -> dic
 def get_or_create_session_state(request: Request, response: Response | None = None) -> dict[str, Any]:
     storage = get_storage(request)
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if session_id and storage.session_dir(session_id).exists():
+    # PLAN_AUDIT §16.1: validate cookie format before touching filesystem
+    if session_id and validate_session_id(session_id) and storage.session_dir(session_id).exists():
         return _session_state_from_storage(storage, session_id)
 
     created = create_session(storage)
     state = asdict(created)
     if response is not None:
-        response.set_cookie(SESSION_COOKIE_NAME, created.session_id or "", httponly=True, samesite="lax")
+        config = get_config(request)
+        response.set_cookie(
+            SESSION_COOKIE_NAME,
+            created.session_id or "",
+            httponly=True,
+            samesite="lax",
+            secure=not config.debug,  # PLAN_AUDIT §16.1: Secure flag in production
+        )
     return state
 
 
 def ensure_session_cookie(request: Request, response: Response, session_state: dict[str, Any]) -> Response:
     session_id = session_state.get("session_id")
     if isinstance(session_id, str) and session_id and request.cookies.get(SESSION_COOKIE_NAME) != session_id:
-        response.set_cookie(SESSION_COOKIE_NAME, session_id, httponly=True, samesite="lax")
+        config = get_config(request)
+        response.set_cookie(
+            SESSION_COOKIE_NAME,
+            session_id,
+            httponly=True,
+            samesite="lax",
+            secure=not config.debug,  # PLAN_AUDIT §16.1: Secure flag in production
+        )
     return response
 
 

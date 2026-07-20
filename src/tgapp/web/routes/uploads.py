@@ -19,6 +19,30 @@ from tgapp.web.deps import SESSION_COOKIE_NAME, ensure_session_cookie, get_confi
 router = APIRouter(prefix="/upload")
 
 
+# PLAN_AUDIT §16.4: upload size limit constant (fallback if config unavailable)
+_MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
+_MAX_UPLOAD_FILES = 10
+
+
+async def _to_payload(upload: UploadFile) -> UploadPayload:
+    """Read upload content with size limit enforcement (PLAN_AUDIT §16.4)."""
+    # Check Content-Length header first (if present)
+    content_length = upload.size
+    if content_length is not None and content_length > _MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large: {content_length} bytes exceeds limit of {_MAX_UPLOAD_SIZE} bytes",
+        )
+    raw = await upload.read()
+    if len(raw) > _MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large: {len(raw)} bytes exceeds limit of {_MAX_UPLOAD_SIZE} bytes",
+        )
+    encoded = base64.b64encode(raw).decode("ascii")
+    return UploadPayload(filename=upload.filename, content_type=upload.content_type, content=f"data:{upload.content_type or 'application/octet-stream'};base64,{encoded}")
+
+
 # Adapter: wrap module-level functions as ThermogramParser Protocol implementation
 class _FileParserAdapter(ThermogramParser):
     def parse_thermogram_uploads(self, uploads: list[UploadPayload]) -> list:
@@ -48,12 +72,6 @@ class _ArchiveServiceAdapter:
 
 _PARSER = _FileParserAdapter()
 _ARCHIVE = _ArchiveServiceAdapter()
-
-
-async def _to_payload(upload: UploadFile) -> UploadPayload:
-    raw = await upload.read()
-    encoded = base64.b64encode(raw).decode("ascii")
-    return UploadPayload(filename=upload.filename, content_type=upload.content_type, content=f"data:{upload.content_type or 'application/octet-stream'};base64,{encoded}")
 
 
 async def _uploads_from_form(request: Request, *field_names: str) -> list[UploadFile]:
@@ -98,6 +116,12 @@ async def upload_thermograms_route(request: Request, response: Response):
     thermograms = await _uploads_from_form(request, "thermograms", "thermogramm")
     if not thermograms:
         raise HTTPException(status_code=422, detail="Missing upload field. Expected thermograms or thermogramm.")
+    # PLAN_AUDIT §16.4: file count limit
+    if len(thermograms) > _MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Too many files: {len(thermograms)} exceeds limit of {_MAX_UPLOAD_FILES}",
+        )
     uploads = [await _to_payload(item) for item in thermograms]
     state = upload_thermograms(storage, _PARSER, session_state, uploads)
     session_state = asdict(state)
@@ -144,5 +168,12 @@ async def upload_session(request: Request):
     metadata["status"] = state.status
     storage.save_json(storage.metadata_path(state.session_id or ""), metadata)
     response = RedirectResponse(url=get_config(request).public_base_path, status_code=303)
-    response.set_cookie(SESSION_COOKIE_NAME, state.session_id or "", httponly=True, samesite="lax")
+    config = get_config(request)
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        state.session_id or "",
+        httponly=True,
+        samesite="lax",
+        secure=not config.debug,  # PLAN_AUDIT §16.1
+    )
     return response

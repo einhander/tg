@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import asdict
 from pathlib import Path
 
@@ -8,7 +10,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 
 from tgapp.application.ports import SessionArchiveService, SessionRepository
 from tgapp.application.use_cases import export_session
-from tgapp.web.deps import get_or_create_session_state, get_storage
+from tgapp.web.deps import get_config, get_or_create_session_state, get_storage
 
 router = APIRouter(prefix="/export")
 
@@ -27,16 +29,32 @@ def _archive_service() -> SessionArchiveService:
 
 @router.get("/session", name="export_session")
 def export_session_route(request: Request, response: Response):
+    """Export session as ZIP archive (PLAN_AUDIT §16.3).
+
+    - Creates archive in a temp directory (never inside session dir)
+    - Uses atomic temp file → serve → cleanup pattern
+    """
     session_state = get_or_create_session_state(request, response)
     storage = get_storage(request)
     state = export_session(storage, _archive_service(), session_state)
     sid = session_state.get("session_id")
     if not isinstance(sid, str) or not sid:
         raise HTTPException(status_code=404, detail="Session archive is unavailable")
-    archive_path = storage.session_dir(sid) / f"{sid}.tg"
-    if not archive_path.exists():
-        raise HTTPException(status_code=404, detail="Session archive is unavailable")
-    return FileResponse(path=archive_path, filename=archive_path.name, media_type="application/octet-stream")
+
+    session_dir = storage.session_dir(sid)
+    archive_name = f"{sid}.tg"
+
+    # PLAN_AUDIT §16.3: create archive outside session directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_archive = Path(tmpdir) / archive_name
+        _archive_service().pack_session_directory(session_dir, tmp_archive)
+
+        # Serve the temp file, then let TemporaryDirectory clean it up
+        return FileResponse(
+            path=tmp_archive,
+            filename=archive_name,
+            media_type="application/octet-stream",
+        )
 
 
 @router.get("/plot", name="export_plot")
