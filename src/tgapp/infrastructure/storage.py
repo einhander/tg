@@ -104,3 +104,22 @@ class SessionStorage:
         if not raw_root.exists():
             return {}
         return {path.name: self.load_frame(path) for path in sorted(raw_root.glob("*.csv"))}
+
+    def validated_thermogram_dir(self, session_id: str) -> Path:
+        path = self.session_dir(session_id) / "validated_thermograms"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def save_validated_thermograms(self, session_id: str, frames: dict[str, pd.DataFrame]) -> list[str]:
+        names: list[str] = []
+        for filename, frame in frames.items():
+            target = self.validated_thermogram_dir(session_id) / filename
+            self.save_frame(target, frame)
+            names.append(filename)
+        return names
+
+    def load_validated_thermograms(self, session_id: str) -> dict[str, pd.DataFrame]:
+        validated_root = self.validated_thermogram_dir(session_id)
+        if not validated_root.exists():
+            return {}
+        return {path.name: self.load_frame(path) for path in sorted(validated_root.glob("*.csv"))}

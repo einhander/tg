@@ -18,7 +18,7 @@ def normalize_thermogram_frame(frame: pd.DataFrame) -> pd.DataFrame:
     ordered = working.loc[:, NORMALIZED_COLUMNS].copy()
     for column in NORMALIZED_COLUMNS:
         ordered[column] = pd.to_numeric(ordered[column], errors="coerce")
-    ordered = ordered.dropna(how="all").ffill().bfill().fillna(0.0)
+    ordered = ordered.dropna(how="all")
     return ordered.reset_index(drop=True)
 
 

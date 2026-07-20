@@ -3,11 +3,12 @@ from __future__ import annotations
 import base64
 import io
 
+import numpy as np
 import pandas as pd
 
 from tgapp.application.dto import UploadPayload
 from tgapp.application.ports import DecodedUpload
-from tgapp.domain.models import CorrectionFile, ThermogramFile
+from tgapp.domain.models import CorrectionFile, ParsedThermogram, ThermogramFile
 from tgapp.domain.thermogram import normalize_thermogram_frame
 
 
@@ -56,7 +57,7 @@ def _normalize_columns(frame: pd.DataFrame) -> pd.DataFrame:
     renamed.columns = [mapping.get(str(column).strip().lower(), str(column).strip().lower()) for column in renamed.columns]
     normalized = normalize_thermogram_frame(renamed)
     for column in ["temp", "deltatemp", "time", "mass"]:
-        normalized[column] = pd.to_numeric(normalized[column], errors="coerce").fillna(0.0)
+        normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
     return normalized
 
 
@@ -73,3 +74,35 @@ def parse_correction_upload(upload: UploadPayload) -> CorrectionFile:
     decoded = decode_upload(upload)
     frame = _normalize_columns(_read_frame(decoded.raw_bytes))
     return CorrectionFile(name=decoded.filename, frame=frame, metadata={"content_type": decoded.content_type})
+
+
+def frame_to_parsed(name: str, frame: pd.DataFrame, content_type: str = "") -> ParsedThermogram:
+    """Convert a normalized DataFrame to ParsedThermogram (numpy arrays)."""
+    if frame.empty:
+        return ParsedThermogram(
+            name=name,
+            temp=np.array([], dtype=float),
+            deltatemp=None,
+            time=np.array([], dtype=float),
+            mass=np.array([], dtype=float),
+            metadata={"content_type": content_type, "rows_parsed": 0, "rows_with_nan": 0},
+        )
+    temp = frame["temp"].to_numpy(dtype=float)
+    deltatemp = frame["deltatemp"].to_numpy(dtype=float) if "deltatemp" in frame.columns else None
+    time = frame["time"].to_numpy(dtype=float)
+    mass = frame["mass"].to_numpy(dtype=float)
+    n_nan = int(np.isnan(temp).sum() + np.isnan(time).sum() + np.isnan(mass).sum())
+    if deltatemp is not None:
+        n_nan += int(np.isnan(deltatemp).sum())
+    return ParsedThermogram(
+        name=name,
+        temp=temp,
+        deltatemp=deltatemp,
+        time=time,
+        mass=mass,
+        metadata={
+            "content_type": content_type,
+            "rows_parsed": len(frame),
+            "rows_with_nan": n_nan,
+        },
+    )

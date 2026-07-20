@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 
@@ -85,3 +86,75 @@ class ThermogramProcessed:
     heat_speed_text: str = "Heat speed unavailable"
     adjusted_difflag: int = 1
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Thermogram pipeline models (Phase 4: strict model)
+# ---------------------------------------------------------------------------
+
+
+class ThermogramValidationError(Exception):
+    """Базовое исключение валидации термограммы."""
+
+    def __init__(self, message: str, details: dict | None = None):
+        super().__init__(message)
+        self.details = details or {}
+
+
+class NonMonotonicAxisError(ThermogramValidationError):
+    """Температура или время не монотонны."""
+
+
+class InsufficientDataError(ThermogramValidationError):
+    """Слишком мало точек после очистки."""
+
+
+class NoCommonRangeError(ThermogramValidationError):
+    """Нет общего температурного диапазона между термограммами."""
+
+
+class CorrectionRangeError(ThermogramValidationError):
+    """Корректирующая кривая не покрывает рабочий диапазон."""
+
+
+class InvalidProcessingSettingsError(ThermogramValidationError):
+    """Некорректные параметры обработки."""
+
+
+@dataclass(slots=True, frozen=True)
+class ParsedThermogram:
+    """Парсированная термограмма — сырые данные после парсинга."""
+
+    name: str
+    temp: np.ndarray
+    deltatemp: np.ndarray | None
+    time: np.ndarray
+    mass: np.ndarray
+    metadata: dict = field(default_factory=dict)
+    # metadata: original_filename, content_type, rows_parsed, rows_with_nan
+
+
+@dataclass(slots=True, frozen=True)
+class ValidatedThermogram:
+    """Валидированная термограмма — проверенные данные."""
+
+    name: str
+    temp: np.ndarray
+    deltatemp: np.ndarray | None
+    time: np.ndarray
+    mass: np.ndarray
+    metadata: dict = field(default_factory=dict)
+    # metadata: rows_removed, rows_interpolated, monotonic_temp, monotonic_time
+
+
+@dataclass(slots=True, frozen=True)
+class AlignedThermogram:
+    """Выровненная термограмма — интерполирована на общую температурную сетку."""
+
+    name: str
+    temp: np.ndarray  # общая сетка
+    deltatemp: np.ndarray | None
+    time: np.ndarray
+    mass: np.ndarray
+    temperature_grid: np.ndarray  # общая ось
+    metadata: dict = field(default_factory=dict)

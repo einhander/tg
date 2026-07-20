@@ -30,6 +30,10 @@ class _FileParserAdapter(ThermogramParser):
     def decode_upload(self, upload: UploadPayload) -> DecodedUpload:
         return decode_upload(upload)
 
+    def frame_to_parsed(self, name: str, frame, content_type: str = ""):
+        from tgapp.infrastructure.file_parsers import frame_to_parsed as _frame_to_parsed
+        return _frame_to_parsed(name, frame, content_type)
+
 
 # Adapter: wrap module-level functions as SessionArchiveService Protocol implementation
 class _ArchiveServiceAdapter:

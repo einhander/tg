@@ -31,23 +31,23 @@ class TestNormalizeThermogramFrame:
         assert result["temp"].iloc[0] == 25.0
         assert result["mass"].iloc[2] == 98.0
 
-    def test_missing_columns_gets_zero_filled(self):
-        """Columns not present in input get filled with zeros."""
+    def test_missing_columns_remain_nan(self):
+        """Columns not present in input remain NaN (no fillna)."""
         df = pd.DataFrame({"temp": [1.0, 2.0], "mass": [10.0, 20.0]})
         result = normalize_thermogram_frame(df)
         assert list(result.columns) == ["temp", "deltatemp", "time", "mass"]
-        assert result["deltatemp"].iloc[0] == 0.0
-        assert result["time"].iloc[0] == 0.0
+        assert pd.isna(result["deltatemp"].iloc[0])
+        assert pd.isna(result["time"].iloc[0])
 
-    def test_non_numeric_becomes_nan_then_zero(self):
-        """Non-numeric values become 0 after coercion."""
+    def test_non_numeric_becomes_nan(self):
+        """Non-numeric values become NaN after coercion (no fillna)."""
         df = pd.DataFrame({
             "temp": ["abc", "10.0"],
             "mass": ["100.0", "200.0"],
         })
         result = normalize_thermogram_frame(df)
-        # "abc" → NaN → ffill fills with next value "10.0"
-        assert result["temp"].iloc[0] == 10.0
+        # "abc" → NaN, no ffill/bfill/fillna
+        assert pd.isna(result["temp"].iloc[0])
         assert result["temp"].iloc[1] == 10.0
 
 
