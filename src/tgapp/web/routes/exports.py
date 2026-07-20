@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from fastapi.responses import FileResponse, PlainTextResponse, Response
+from fastapi.responses import PlainTextResponse, Response
 
 from tgapp.application.ports import SessionArchiveService, SessionRepository
 from tgapp.application.use_cases import export_session

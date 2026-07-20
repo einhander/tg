@@ -258,7 +258,7 @@ def client_with_base_path(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         session_dir=Path(tmp_dir),
     )
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, root_path="/tg") as client:
         yield client
     # Cleanup: remove session dir
     import shutil
