@@ -9,6 +9,7 @@ import pandas as pd
 
 from tgapp.application.ports import SessionRepository, ThermogramParser
 from tgapp.domain.alignment import align_thermograms
+from tgapp.domain.correction import apply_correction_to_aligned
 from tgapp.domain.models import (
     AlignedThermogram,
     CorrectionFile,
@@ -161,9 +162,18 @@ def process_thermograms(
             "effect_text": "Тепловой эффект: выделите температурный интервал",
         }
 
-    # Build ThermogramFile objects from aligned thermograms for domain processing
+    # Apply temperature correction to aligned thermograms (temperature-grid interpolation)
+    corrected_aligned = aligned
+    correction = _load_correction_model(storage, session_id)
+    if settings.use_correction and correction is not None:
+        try:
+            corrected_aligned = apply_correction_to_aligned(aligned, correction)
+        except Exception as e:
+            logger.warning("Correction skipped: %s", e)
+
+    # Build ThermogramFile objects from aligned (corrected) thermograms for domain processing
     aligned_thermograms: list[ThermogramFile] = []
-    for a in aligned:
+    for a in corrected_aligned:
         data: dict[str, list[float]] = {
             "temp": a.temp.tolist(),
             "time": a.time.tolist(),
@@ -173,7 +183,6 @@ def process_thermograms(
             data["deltatemp"] = a.deltatemp.tolist()
         aligned_thermograms.append(ThermogramFile(name=a.name, frame=pd.DataFrame(data)))
 
-    correction = _load_correction_model(storage, session_id)
     processed = _domain_process(aligned_thermograms, settings, correction)
     storage.save_frame(storage.processed_path(session_id), processed.mean_frame)
     storage.save_frame(storage.raw_plot_path(session_id), processed.mean_frame)

@@ -96,8 +96,23 @@ def compute_mean_traces(resampled_frames: list[pd.DataFrame]) -> pd.DataFrame:
 
 
 def compute_mean_correction(correction: CorrectionFile | None, bins: int) -> np.ndarray | None:
+    """Вычислить correction на основе resample (legacy API для обратной совместимости).
+
+    Для нового пайплайна с AlignedThermogram использовать
+    interpolate_correction_on_grid / apply_correction_to_aligned из correction.py.
+    """
     if correction is None or correction.frame.empty:
         return None
+
+    frame = correction.frame.copy()
+    frame["temp"] = pd.to_numeric(frame["temp"], errors="coerce")
+    frame["deltatemp"] = pd.to_numeric(frame["deltatemp"], errors="coerce")
+    valid = frame.dropna(subset=["temp", "deltatemp"])
+
+    if len(valid) < 2:
+        return None
+
+    # Legacy: resample по индексу строки (не по температуре)
     resampled = resample_thermogram(correction.frame, bins)
     if resampled.empty:
         return None
