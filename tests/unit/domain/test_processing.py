@@ -7,57 +7,9 @@ import pytest
 
 from tgapp.domain.models import ProcessingSettings, ThermogramFile
 from tgapp.domain.processing import (
-    compute_dmdt_trace,
-    estimate_adjusted_difflag,
     process_thermograms,
     round_mean_frame,
 )
-
-
-class TestComputeDmdtTrace:
-    """compute_dmdt_trace basic behavior."""
-
-    def test_empty_frame(self):
-        """Empty frame → NaN series."""
-        result = compute_dmdt_trace(pd.DataFrame(), difflag=1, bins=100)
-        assert len(result) == 100
-        assert result.name == "dmdt"
-        assert result.isna().all()
-
-    def test_missing_mass_column(self):
-        """No mass column → NaN series."""
-        df = pd.DataFrame({"temp": [1.0, 2.0], "time": [0.0, 1.0]})
-        result = compute_dmdt_trace(df, difflag=1, bins=2)
-        assert result.isna().all()
-
-    def test_basic_dmdt(self):
-        """Linear mass loss → constant dmdt."""
-        n = 10
-        df = pd.DataFrame({
-            "mass": [100.0 - i for i in range(n)],
-            "time": [float(i) for i in range(n)],
-        })
-        result = compute_dmdt_trace(df, difflag=1, bins=n)
-        # dmdt should be approximately -1.0 for most entries
-        valid = result.dropna()
-        assert len(valid) > 0
-        assert valid.iloc[0] < 0  # mass decreasing
-
-
-class TestEstimateAdjustedDifflag:
-    """estimate_adjusted_difflag."""
-
-    def test_empty_resampled(self):
-        """No resampled frames → difflag=1."""
-        result = estimate_adjusted_difflag([], bins=1000, difflag=1)
-        assert result == 1
-
-    def test_basic_adjustment(self):
-        """Some resampled frames → adjusted difflag."""
-        df = pd.DataFrame({"time": [0.0, 1.0, 2.0, 3.0]})
-        resampled = [df]
-        result = estimate_adjusted_difflag(resampled, bins=100, difflag=1)
-        assert result >= 1
 
 
 class TestRoundMeanFrame:

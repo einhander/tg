@@ -12,20 +12,6 @@ from tgapp.domain.summary import build_heat_speed_text, build_summary
 from tgapp.domain.thermogram import combine_thermograms, compute_mean_correction, compute_mean_traces, resample_thermogram
 
 
-def estimate_adjusted_difflag(resampled_times: list[pd.DataFrame], bins: int, difflag: int) -> int:
-    time_arrays = [frame["time"].to_numpy(dtype=float) for frame in resampled_times if not frame.empty and "time" in frame.columns]
-    if not time_arrays:
-        return 1
-    time_matrix = np.vstack(time_arrays)
-    timediff = time_matrix.mean(axis=0)
-    max_timediff = float(np.nanmax(timediff * 60.0)) if timediff.size else 0.0
-    if max_timediff <= 0:
-        return 1
-    points = bins / max_timediff
-    adjusted = int(round(difflag * points))
-    return max(adjusted, 1)
-
-
 def round_mean_frame(frame: pd.DataFrame) -> pd.DataFrame:
     rounded = frame.copy()
     for column in ("temp", "time", "deltatemp"):
@@ -36,29 +22,64 @@ def round_mean_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return rounded
 
 
-def compute_dmdt_trace(frame: pd.DataFrame, difflag: int, bins: int) -> pd.Series:
-    if frame.empty or "mass" not in frame.columns or "time" not in frame.columns:
-        return pd.Series([np.nan] * max(bins, 1), name="dmdt", dtype="float64")
+def compute_dmdt_per_run(frame: pd.DataFrame) -> pd.Series:
+    """Рассчитать dm/dt для одного эксперимента через np.gradient.
 
-    lag = max(int(difflag), 1)
+    Использует центральные разности (np.gradient), которые дают
+    производную второго порядка точности.
+
+    Args:
+        frame: DataFrame с колонками 'mass' и 'time'
+
+    Returns:
+        Series с dm/dt в единицах массы/время
+    """
+    if frame.empty or "mass" not in frame.columns or "time" not in frame.columns:
+        return pd.Series([np.nan] * 500, name="dmdt", dtype="float64")
+
     mass = frame["mass"].to_numpy(dtype=float)
     time = frame["time"].to_numpy(dtype=float)
-    if len(mass) <= lag or len(time) <= lag:
-        return pd.Series([np.nan] * len(frame.index), name="dmdt", dtype="float64")
 
-    delta_mass = mass[lag:] - mass[:-lag]
-    delta_time = time[lag:] - time[:-lag]
-    dmdt = np.divide(delta_mass, delta_time, out=np.full_like(delta_mass, np.nan, dtype=float), where=np.abs(delta_time) > 1e-12)
+    dmdt = np.gradient(mass, time)
 
-    if len(dmdt) > 1 and len(dmdt) != bins:
-        source_index = np.linspace(0.0, 1.0, num=len(dmdt))
-        target_bins = max(int(bins - lag), 1)
-        target_index = np.linspace(0.0, 1.0, num=target_bins)
-        dmdt = np.interp(target_index, source_index, dmdt)
+    return pd.Series(dmdt, name="dmdt", dtype="float64", index=frame.index)
 
-    padded = np.concatenate([dmdt, np.full(lag, np.nan)])
-    padded = padded[: len(frame.index)] if len(padded) >= len(frame.index) else np.concatenate([padded, np.full(len(frame.index) - len(padded), np.nan)])
-    return pd.Series(padded, name="dmdt", dtype="float64")
+
+def average_dmdt_traces(dmdt_traces: list[pd.Series]) -> pd.Series:
+    """Усреднить производные от нескольких экспериментов.
+
+    Все серии должны иметь одинаковую длину (после выравнивания на общую сетку).
+
+    Args:
+        dmdt_traces: список серий с dm/dt от каждого эксперимента
+
+    Returns:
+        Одна усреднённая серия
+    """
+    if not dmdt_traces:
+        return pd.Series([np.nan] * 500, name="dmdt", dtype="float64")
+
+    lengths = {len(t) for t in dmdt_traces}
+    if len(lengths) != 1:
+        max_len = max(len(t) for t in dmdt_traces)
+        aligned = []
+        for t in dmdt_traces:
+            if len(t) == max_len:
+                aligned.append(t)
+            else:
+                old_idx = np.linspace(0, max_len - 1, len(t))
+                new_idx = np.linspace(0, max_len - 1, max_len)
+                aligned.append(pd.Series(
+                    np.interp(new_idx, old_idx, t.to_numpy(dtype=float)),
+                    name="dmdt",
+                    dtype="float64",
+                ))
+        dmdt_traces = aligned
+
+    stacked = np.stack([t.to_numpy(dtype=float) for t in dmdt_traces], axis=0)
+    mean_dmdt = np.nanmean(stacked, axis=0)
+
+    return pd.Series(mean_dmdt, name="dmdt", dtype="float64")
 
 
 def process_thermograms(
@@ -69,16 +90,23 @@ def process_thermograms(
     combined = combine_thermograms(thermograms)
     resampled = [resample_thermogram(item.frame, settings.bins) for item in thermograms]
     resampled = [frame for frame in resampled if not frame.empty]
+
+    # Smooth each experiment individually BEFORE computing derivatives
+    smoothed_frames = []
+    for frame in resampled:
+        if settings.sg_mode:
+            smoothed = smooth_column_savitzky_golay(frame, "mass", settings.sg_window, settings.sg_polyorder)
+        else:
+            smoothed = smooth_mass(frame, settings.mass_smoothing)
+        smoothed_frames.append(smoothed)
+
+    # Calculate dm/dt for each experiment
+    dmdt_traces = [compute_dmdt_per_run(frame) for frame in smoothed_frames]
+
+    # Average derivatives
     mean_frame = compute_mean_traces(resampled)
-    adjusted_difflag = estimate_adjusted_difflag(resampled, settings.bins, settings.difflag)
-
-    # Apply Savitzky-Golay smoothing to mass BEFORE computing derivative
-    if settings.sg_mode:
-        mean_frame = smooth_column_savitzky_golay(mean_frame, "mass", settings.sg_window, settings.sg_polyorder)
-    else:
-        mean_frame = smooth_mass(mean_frame, settings.mass_smoothing)
-
-    mean_frame["dmdt"] = compute_dmdt_trace(mean_frame, adjusted_difflag, settings.bins)
+    mean_dmdt = average_dmdt_traces(dmdt_traces)
+    mean_frame["dmdt"] = mean_dmdt
 
     if settings.use_correction:
         correction_mean = compute_mean_correction(correction, settings.bins)
@@ -108,6 +136,6 @@ def process_thermograms(
         peaks=peaks,
         summary=summary,
         heat_speed_text=heat_speed,
-        adjusted_difflag=adjusted_difflag,
-        metadata={"correction_loaded": correction is not None, "adjusted_difflag": adjusted_difflag, "settings": asdict(settings)},
+        adjusted_difflag=1,
+        metadata={"correction_loaded": correction is not None, "settings": asdict(settings)},
     )

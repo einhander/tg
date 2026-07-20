@@ -53,14 +53,45 @@ def _summary_preview_rows(frame: pd.DataFrame, limit: int = 8) -> list[str]:
 def build_heat_speed_text(frame: pd.DataFrame) -> str:
     if frame.empty or "temp" not in frame.columns or "time" not in frame.columns:
         return "Скорость нагрева: недоступна"
-    tail = frame.loc[:, ["temp", "time"]].dropna()
-    if tail.empty:
+
+    data = frame.loc[:, ["temp", "time"]].dropna()
+    if len(data) < 2:
         return "Скорость нагрева: недоступна"
-    last = tail.iloc[-1]
-    time_value = float(last["time"])
-    if time_value == 0:
+
+    temp = data["temp"].to_numpy(dtype=float)
+    time = data["time"].to_numpy(dtype=float)
+
+    # Проверить что время строго возрастает
+    if np.any(time[1:] <= time[:-1]):
+        return "Скорость нагрева: недоступна (немонотонное время)"
+
+    # Линейная регрессия T(t) = T0 + βt
+    # β = cov(T, t) / var(t)
+    t_mean = np.mean(time)
+    T_mean = np.mean(temp)
+
+    numerator = np.sum((time - t_mean) * (temp - T_mean))
+    denominator = np.sum((time - t_mean) ** 2)
+
+    if denominator == 0:
         return "Скорость нагрева: недоступна"
-    return f"Скорость нагрева: {round(float(last['temp']) / time_value, 1):.1f} K/мин"
+
+    beta = numerator / denominator
+
+    # Проверить качество линейного приближения (R²)
+    T_predicted = T_mean + beta * (time - t_mean)
+    T_residual = temp - T_predicted
+    T_ss_res = np.sum(T_residual ** 2)
+    T_ss_tot = np.sum((temp - T_mean) ** 2)
+
+    r_squared = 1 - (T_ss_res / T_ss_tot) if T_ss_tot > 0 else 0
+
+    # Если R² < 0.9, нагрев существенно нелинеен
+    linearity_warning = ""
+    if r_squared < 0.9:
+        linearity_warning = " (средняя скорость, нагрев нелинеен)"
+
+    return f"Скорость нагрева: {beta:.1f} K/мин{linearity_warning}"
 
 
 def build_effect_text(frame: pd.DataFrame, xmin: float | None, xmax: float | None, init_mass: float) -> str:

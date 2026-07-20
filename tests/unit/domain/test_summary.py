@@ -30,11 +30,11 @@ class TestBuildHeatSpeedText:
     def test_speed_9_8(self):
         """Known speed 9.8 K/min."""
         df = pd.DataFrame({
-            "temp": [98.0],
-            "time": [10.0],
+            "temp": [25.0, 123.0],
+            "time": [0.0, 10.0],
         })
         text = build_heat_speed_text(df)
-        # 98/10 = 9.8
+        # (123-25)/10 = 9.8
         assert "9.8" in text
 
     def test_empty_frame(self):

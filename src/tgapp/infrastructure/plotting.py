@@ -10,7 +10,7 @@ import plotly.graph_objects as go  # pyright: ignore[reportMissingImports]
 from tgapp.application.dto import PlotPayload
 from tgapp.domain.models import ThermogramViewSettings
 from tgapp.domain.peaks import detect_raw_plot_markers, detect_tg_inflection_markers
-from tgapp.domain.processing import compute_dmdt_trace
+from tgapp.domain.processing import compute_dmdt_per_run
 from tgapp.domain.smoothing import smooth_series_savitzky_golay
 from tgapp.infrastructure.serialization import _json_safe
 
@@ -235,7 +235,7 @@ def build_raw_plot(frame: pd.DataFrame, settings: ThermogramViewSettings | None 
 
     # Compute and add DTG trace from mass/time derivative
     if not plot_settings.hide_dtg and not plot_frame.empty and {"temp", "mass", "time"}.issubset(plot_frame.columns):
-        dmdt = compute_dmdt_trace(plot_frame, difflag=1, bins=len(plot_frame))
+        dmdt = compute_dmdt_per_run(plot_frame)
         if dmdt.dropna().empty:
             dmdt = None
         if dmdt is not None and len(dmdt) == len(plot_frame):
