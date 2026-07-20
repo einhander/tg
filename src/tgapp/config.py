@@ -33,6 +33,10 @@ class AppConfig:
     max_unpacked_size: int = 200 * 1024 * 1024    # 200 MB
     max_data_rows: int = 1_000_000
 
+    # Session TTL & size limits (PLAN_AUDIT §17)
+    session_ttl: int = 86_400          # 24 hours in seconds
+    max_session_size: int = 500 * 1024 * 1024  # 500 MB
+
     @property
     def public_base_path(self) -> str:
         return self.base_path or "/"
@@ -50,4 +54,6 @@ class AppConfig:
             max_archive_size=int(os.getenv("APP_MAX_ARCHIVE_SIZE", "104857600")),
             max_unpacked_size=int(os.getenv("APP_MAX_UNPACKED_SIZE", "209715200")),
             max_data_rows=int(os.getenv("APP_MAX_DATA_ROWS", "1000000")),
+            session_ttl=int(os.getenv("APP_SESSION_TTL", "86400")),
+            max_session_size=int(os.getenv("APP_MAX_SESSION_SIZE", "524288000")),
         )

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
+import shutil
 import tempfile
+import time
 import uuid
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
@@ -167,3 +170,105 @@ class SessionStorage:
         if not validated_root.exists():
             return {}
         return {path.name: self.load_frame(path) for path in sorted(validated_root.glob("*.csv"))}
+
+    # ------------------------------------------------------------------
+    # TTL & cleanup (PLAN_AUDIT §17.3)
+    # ------------------------------------------------------------------
+
+    def cleanup_expired(self, ttl_seconds: int = 86_400) -> int:
+        """Remove sessions whose mtime is older than *ttl_seconds*.
+
+        Returns the number of sessions removed.
+        """
+        removed = 0
+        now = time.time()
+        if not self.root.exists():
+            return removed
+        for entry in self.root.iterdir():
+            if not entry.is_dir():
+                continue
+            try:
+                mtime = entry.stat().st_mtime
+            except OSError:
+                continue
+            if now - mtime > ttl_seconds:
+                shutil.rmtree(entry)
+                removed += 1
+        return removed
+
+    # ------------------------------------------------------------------
+    # Session size limits (PLAN_AUDIT §17.4)
+    # ------------------------------------------------------------------
+
+    def session_size(self, session_id: str) -> int:
+        """Return total size (bytes) of all files in a session directory."""
+        total = 0
+        sess = self.session_dir(session_id)
+        if not sess.exists():
+            return 0
+        for f in sess.rglob("*"):
+            if f.is_file():
+                try:
+                    total += f.stat().st_size
+                except OSError:
+                    pass
+        return total
+
+    def check_session_size(self, session_id: str, max_size: int) -> None:
+        """Raise ``ValueError`` if session exceeds *max_size* bytes."""
+        size = self.session_size(session_id)
+        if size > max_size:
+            raise ValueError(
+                f"Session {session_id} exceeds max size: {size} > {max_size}"
+            )
+
+
+class SessionLock:
+    """File-based advisory lock for a single session (PLAN_AUDIT §17.2).
+
+    Uses ``fcntl.flock`` on Unix.  On non-Unix platforms falls back to
+    a simple file-existence check (best-effort, not truly exclusive).
+    """
+
+    def __init__(self, storage: SessionStorage, session_id: str):
+        self._storage = storage
+        self._session_id = session_id
+        self._lock_path = storage.session_dir(session_id) / ".lock"
+        self._lock_file = None  # type: ignore[assignment]
+
+    def acquire(self) -> None:
+        """Acquire an exclusive lock.  Raises ``RuntimeError`` if already locked."""
+        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock_file = open(self._lock_path, "w")
+        try:
+            fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError):
+            self._lock_file.close()
+            self._lock_file = None
+            raise RuntimeError(
+                f"Session {self._session_id} is locked by another process"
+            )
+
+    def release(self) -> None:
+        """Release the lock and clean up the lock file."""
+        if self._lock_file is not None:
+            try:
+                fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            try:
+                self._lock_file.close()
+            except OSError:
+                pass
+            try:
+                self._lock_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        self._lock_file = None
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *args):
+        self.release()

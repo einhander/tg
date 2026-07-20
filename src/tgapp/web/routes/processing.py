@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 from typing import Any, cast
 
@@ -165,5 +166,8 @@ async def process(request: Request, response: Response, peak_prominence_sigma: s
 
     processing_settings = _build_processing_settings(cast(dict[str, Any], existing_processing.get("settings", {})), thermogram_settings)
     storage = get_storage(request)
-    processing_state = process_thermograms(storage, session_state, processing_settings)
+    # PLAN_AUDIT §17.5: offload CPU-bound processing to thread pool
+    processing_state = await asyncio.to_thread(
+        process_thermograms, storage, session_state, processing_settings
+    )
     return _render_process_response(request, response, session_state, processing_state, processing_settings, thermogram_settings)
