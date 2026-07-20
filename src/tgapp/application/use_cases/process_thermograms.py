@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from tgapp.domain.models import (
 )
 from tgapp.domain.processing import process_thermograms as _domain_process
 from tgapp.domain.validator import validate_parsed
+
+logger = logging.getLogger(__name__)
 
 
 def _load_thermogram_models(storage: SessionRepository, session_id: str) -> list[ThermogramFile]:
@@ -121,7 +124,8 @@ def process_thermograms(
                 metadata=rv.metadata,
             )
             re_validated.append(rv)
-        except Exception:
+        except Exception as e:
+            logger.warning("Validation failed for %s: %s", v.name, e)
             continue
 
     if not re_validated:
@@ -157,21 +161,9 @@ def process_thermograms(
             "effect_text": "Тепловой эффект: выделите температурный интервал",
         }
 
-    # Convert aligned thermograms to DataFrames for domain processing
-    aligned_frames: list[pd.DataFrame] = []
-    for a in aligned:
-        data: dict[str, list[float]] = {
-            "temp": a.temp.tolist(),
-            "time": a.time.tolist(),
-            "mass": a.mass.tolist(),
-        }
-        if a.deltatemp is not None:
-            data["deltatemp"] = a.deltatemp.tolist()
-        aligned_frames.append(pd.DataFrame(data))
-
-    # Build ThermogramFile objects from aligned frames for domain processing
+    # Build ThermogramFile objects from aligned thermograms for domain processing
     aligned_thermograms: list[ThermogramFile] = []
-    for i, a in enumerate(aligned):
+    for a in aligned:
         data: dict[str, list[float]] = {
             "temp": a.temp.tolist(),
             "time": a.time.tolist(),

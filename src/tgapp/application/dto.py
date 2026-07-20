@@ -30,6 +30,7 @@ class SessionStateDto:
     session_id: str | None = None
     session_dir: str | None = None
     thermogram_files: list[str] = field(default_factory=list)
+    validated_thermograms: list[str] = field(default_factory=list)
     correction_file: str | None = None
     imported_archive: str | None = None
     status: str = "empty"

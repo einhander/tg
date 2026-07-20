@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from tgapp.application.dto import SessionStateDto, UploadPayload, UiMessage
 from tgapp.application.ports import SessionRepository, ThermogramParser
 from tgapp.domain.models import ParsedThermogram, ThermogramFile, ValidatedThermogram
 from tgapp.domain.validator import validate_parsed
+
+logger = logging.getLogger(__name__)
 
 
 def create_session(storage: SessionRepository) -> SessionStateDto:
@@ -83,8 +86,8 @@ def upload_thermograms(
             validated_df = _validated_to_df(validated)
             validated_key = f"validated_thermogram_{index + 1}.csv"
             validated_frames[validated_key] = validated_df
-        except Exception:
-            # Validation failed — skip this thermogram silently
+        except Exception as e:
+            logger.warning("Validation failed for %s: %s", parsed_file.name, e)
             continue
 
     if validated_frames:
