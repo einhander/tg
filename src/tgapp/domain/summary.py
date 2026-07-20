@@ -4,10 +4,8 @@ import numpy as np
 import pandas as pd
 from typing import Any, cast
 
+from tgapp.domain.effects import calculate_thermal_effect
 from tgapp.domain.models import PeakResult, SummaryResult, ThermogramFile
-
-
-EFFECT_SCALE_K = 0.4458333
 
 
 def build_summary(files: list[ThermogramFile], frame: pd.DataFrame, peaks: list[PeakResult]) -> SummaryResult:
@@ -95,28 +93,7 @@ def build_heat_speed_text(frame: pd.DataFrame) -> str:
 
 
 def build_effect_text(frame: pd.DataFrame, xmin: float | None, xmax: float | None, init_mass: float) -> str:
-    if frame.empty or not {"temp", "deltatemp"}.issubset(frame.columns):
-        return "Тепловой эффект: выделите температурный интервал"
+    """Legacy wrapper for calculate_thermal_effect."""
     if xmin is None or xmax is None:
         return "Тепловой эффект: выделите температурный интервал"
-    left, right = sorted((round(float(xmin), 0), round(float(xmax), 0)))
-    if left == right:
-        return "Тепловой эффект: выделите температурный интервал"
-
-    selection = frame.loc[:, ["temp", "deltatemp"]].dropna()
-    selection = selection[(selection["temp"] > left) & (selection["temp"] < right)].sort_values("temp")
-    if len(selection.index) < 2:
-        return "Тепловой эффект: слишком мало точек"
-
-    shifted = selection.copy()
-    shifted["deltatemp"] = shifted["deltatemp"] - float(shifted.iloc[0]["deltatemp"])
-    first = shifted.iloc[0]
-    last = shifted.iloc[-1]
-    triangle_area = 0.5 * (float(last["temp"]) - float(first["temp"])) * float(last["deltatemp"])
-    trapz_area = float(np.trapezoid(shifted["deltatemp"].to_numpy(dtype=float), shifted["temp"].to_numpy(dtype=float)))
-    effect = trapz_area - triangle_area
-    mass = float(init_mass)
-    if mass == 0:
-        return "Тепловой эффект: начальная масса должна быть ненулевой"
-    scaled_effect = EFFECT_SCALE_K * effect / mass
-    return f"Тепловой эффект: {scaled_effect:.6g} Дж/г"
+    return calculate_thermal_effect(frame, xmin, xmax, init_mass)
