@@ -1,3 +1,7 @@
 <div id="effect-block" class="effect-block" {% if oob %}hx-swap-oob="true"{% endif %}>
+  {% if error and error.severity == "error" and "ошибка" in (error.message|lower) %}
+  <pre id="effect-output" class="effect-output effect-error">{{ error.message }}</pre>
+  {% else %}
   <pre id="effect-output" class="effect-output">{{ effect_text|default('Эффект: выберите температурный интервал') }}</pre>
+  {% endif %}
 </div>

@@ -1,3 +1,18 @@
 <div id="upload-status-block" class="upload-status-block" {% if oob %}hx-swap-oob="true"{% endif %}>
+  {% if error %}
+  <div class="alert alert-{{ error.severity }}">
+    <strong>{{ error.message }}</strong>
+    {% if error.details %}
+    <p class="text-muted">{{ error.details }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if recovery_warning %}
+  <div class="alert alert-warning">
+    <strong>{{ recovery_warning.message }}</strong>
+  </div>
+  {% endif %}
+  {% if not error %}
   <div id="upload-status" class="help-block status-text">{{ upload_status_text|default('') }}</div>
+  {% endif %}
 </div>

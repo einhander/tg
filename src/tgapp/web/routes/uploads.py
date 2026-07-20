@@ -13,6 +13,22 @@ from tgapp.application.use_cases import import_session, upload_correction, uploa
 from tgapp.application.view_models import page_context
 from tgapp.domain.models import ThermogramViewSettings
 from tgapp.infrastructure.file_parsers import decode_upload, parse_correction_upload, parse_thermogram_uploads
+
+# Error handling (PLAN_AUDIT §18)
+from tgapp.application.error_responses import (
+    ErrorSeverity,
+    archive_corrupted,
+    generic_error,
+    insufficient_points,
+    non_monotonic_temp,
+    non_monotonic_time,
+    UserError,
+)
+from tgapp.domain.models import (
+    InsufficientDataError,
+    NonMonotonicAxisError,
+    ThermogramValidationError,
+)
 from tgapp.infrastructure.plotting import build_raw_plot, figure_to_json
 from tgapp.web.deps import SESSION_COOKIE_NAME, ensure_session_cookie, get_config, get_or_create_session_state, get_processing_state, get_storage, get_templates, get_thermogram_settings
 
@@ -123,7 +139,66 @@ async def upload_thermograms_route(request: Request, response: Response):
             detail=f"Too many files: {len(thermograms)} exceeds limit of {_MAX_UPLOAD_FILES}",
         )
     uploads = [await _to_payload(item) for item in thermograms]
-    state = upload_thermograms(storage, _PARSER, session_state, uploads)
+    try:
+        state = upload_thermograms(storage, _PARSER, session_state, uploads)
+    except InsufficientDataError as e:
+        err = insufficient_points(e.details.get("n", 0) if isinstance(e.details, dict) else 0)
+        context = page_context(
+            request=request,
+            base_path=get_config(request).public_base_path,
+            session_state=session_state,
+            processing_state=get_processing_state(request, session_state),
+            thermogram_settings=get_thermogram_settings(request, session_state),
+            upload_status={"message": "", "status": "error"},
+            error=err.to_dict(),
+        )
+        template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_thermograms_response.html", context=context)
+        return ensure_session_cookie(request, template_response, session_state)
+    except NonMonotonicAxisError as e:
+        # Determine whether it's time or temp based on message
+        msg = str(e).lower()
+        if "время" in msg or "time" in msg:
+            err = non_monotonic_time()
+        else:
+            err = non_monotonic_temp()
+        context = page_context(
+            request=request,
+            base_path=get_config(request).public_base_path,
+            session_state=session_state,
+            processing_state=get_processing_state(request, session_state),
+            thermogram_settings=get_thermogram_settings(request, session_state),
+            upload_status={"message": "", "status": "error"},
+            error=err.to_dict(),
+        )
+        template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_thermograms_response.html", context=context)
+        return ensure_session_cookie(request, template_response, session_state)
+    except ThermogramValidationError as e:
+        err = UserError(message=str(e), severity=ErrorSeverity.ERROR)
+        context = page_context(
+            request=request,
+            base_path=get_config(request).public_base_path,
+            session_state=session_state,
+            processing_state=get_processing_state(request, session_state),
+            thermogram_settings=get_thermogram_settings(request, session_state),
+            upload_status={"message": "", "status": "error"},
+            error=err.to_dict(),
+        )
+        template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_thermograms_response.html", context=context)
+        return ensure_session_cookie(request, template_response, session_state)
+    except Exception as e:
+        err = generic_error()
+        context = page_context(
+            request=request,
+            base_path=get_config(request).public_base_path,
+            session_state=session_state,
+            processing_state=get_processing_state(request, session_state),
+            thermogram_settings=get_thermogram_settings(request, session_state),
+            upload_status={"message": "", "status": "error"},
+            error=err.to_dict(),
+        )
+        template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_thermograms_response.html", context=context)
+        return ensure_session_cookie(request, template_response, session_state)
+
     session_state = asdict(state)
     thermogram_settings = get_thermogram_settings(request, session_state)
     plot_json = _get_visible_thermogram_plot_json(storage, session_state, ThermogramViewSettings(**thermogram_settings))
@@ -144,7 +219,34 @@ async def upload_thermograms_route(request: Request, response: Response):
 async def upload_correction_route(request: Request, response: Response):
     session_state = get_or_create_session_state(request, response)
     correction = await _single_upload_from_form(request, "correction")
-    state = upload_correction(get_storage(request), _PARSER, session_state, await _to_payload(correction))
+    try:
+        state = upload_correction(get_storage(request), _PARSER, session_state, await _to_payload(correction))
+    except ThermogramValidationError as e:
+        err = UserError(message=str(e), severity=ErrorSeverity.ERROR)
+        context = page_context(
+            request=request,
+            base_path=get_config(request).public_base_path,
+            session_state=session_state,
+            processing_state=get_processing_state(request, session_state),
+            thermogram_settings=get_thermogram_settings(request, session_state),
+            upload_status={"message": "", "status": "error"},
+            error=err.to_dict(),
+        )
+        template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_status_block.html", context=context)
+        return ensure_session_cookie(request, template_response, session_state)
+    except Exception as e:
+        err = generic_error()
+        context = page_context(
+            request=request,
+            base_path=get_config(request).public_base_path,
+            session_state=session_state,
+            processing_state=get_processing_state(request, session_state),
+            thermogram_settings=get_thermogram_settings(request, session_state),
+            upload_status={"message": "", "status": "error"},
+            error=err.to_dict(),
+        )
+        template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_status_block.html", context=context)
+        return ensure_session_cookie(request, template_response, session_state)
     session_state = asdict(state)
     context = page_context(
         request=request,
@@ -161,7 +263,22 @@ async def upload_correction_route(request: Request, response: Response):
 @router.post("/session", name="upload_session")
 async def upload_session(request: Request):
     session_file = await _single_upload_from_form(request, "session_file", "data")
-    state = import_session(get_storage(request), _ARCHIVE, _PARSER, await _to_payload(session_file))
+    try:
+        state = import_session(get_storage(request), _ARCHIVE, _PARSER, await _to_payload(session_file))
+    except Exception as e:
+        err = archive_corrupted(session_file.filename or "archive")
+        context = page_context(
+            request=request,
+            base_path=get_config(request).public_base_path,
+            session_state=get_or_create_session_state(request, Response()),
+            processing_state={},
+            thermogram_settings={},
+            upload_status={"message": "", "status": "error"},
+            error=err.to_dict(),
+        )
+        template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_status_block.html", context=context)
+        response = Response()
+        return ensure_session_cookie(request, template_response, get_or_create_session_state(request, response))
     storage = get_storage(request)
     metadata = storage.load_json(storage.metadata_path(state.session_id or ""))
     metadata["imported_archive"] = session_file.filename

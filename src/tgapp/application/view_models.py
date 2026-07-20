@@ -58,7 +58,19 @@ def _get_heat_speed_text(processing_state: dict[str, Any]) -> str:
     return str(text) if text else "Скорость нагрева: недоступна"
 
 
-def page_context(*, request: Any, base_path: str, session_state: dict[str, Any], processing_state: dict[str, Any], plot_payload: dict[str, Any] | None = None, upload_status: dict[str, Any] | None = None, effect_text: str | None = None, thermogram_settings: dict[str, Any] | None = None) -> dict[str, Any]:
+def page_context(
+    *,
+    request: Any,
+    base_path: str,
+    session_state: dict[str, Any],
+    processing_state: dict[str, Any],
+    plot_payload: dict[str, Any] | None = None,
+    upload_status: dict[str, Any] | None = None,
+    effect_text: str | None = None,
+    thermogram_settings: dict[str, Any] | None = None,
+    error: dict[str, Any] | None = None,
+    recovery_warning: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     processing_vm = processing_view_model(processing_state)
     session_vm = session_view_model(session_state)
     session_vm.setdefault("init_mass", processing_vm.get("init_mass", 1.0))
@@ -92,4 +104,6 @@ def page_context(*, request: Any, base_path: str, session_state: dict[str, Any],
         "summary_metrics": processing_vm.get("summary_metrics", {}),
         "upload_status": upload_vm,
         "upload_status_text": str(upload_vm.get("message", "")),
+        "error": error,
+        "recovery_warning": recovery_warning,
     }

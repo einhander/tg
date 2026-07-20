@@ -17,6 +17,9 @@ from tgapp.domain.processing import process_thermograms as _domain_process
 from tgapp.domain.processing_engine import ProcessingEngine
 from tgapp.domain.validator import validate_parsed
 
+# Recovery warnings (PLAN_AUDIT §18)
+from tgapp.application.error_responses import recovery_warning
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,6 +65,34 @@ def _validated_to_df(v: ValidatedThermogram) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
+def _build_recovery_warning(validated: list[ValidatedThermogram]) -> dict | None:
+    """Build recovery warning if any validation removed/interpolated rows."""
+    total_removed = 0
+    total_interpolated = 0
+    for v in validated:
+        meta = v.metadata or {}
+        total_removed += meta.get("rows_removed", 0)
+        total_interpolated += meta.get("rows_interpolated", 0)
+    if total_removed == 0 and total_interpolated == 0:
+        return None
+    # Use the last validated thermogram's range as the actual range
+    last = validated[-1]
+    actual_range = (float(last.temp.min()), float(last.temp.max()))
+    # Check for narrowed range (multiple files with different ranges)
+    if len(validated) > 1:
+        all_mins = [float(v.temp.min()) for v in validated]
+        all_maxs = [float(v.temp.max()) for v in validated]
+        narrowed_range = (max(all_mins), min(all_maxs))
+    else:
+        narrowed_range = None
+    return recovery_warning(
+        rows_removed=total_removed,
+        rows_interpolated=total_interpolated,
+        actual_range=actual_range,
+        narrowed_range=narrowed_range,
+    ).to_dict()
+
+
 def _load_correction_model(storage: SessionRepository, session_id: str) -> CorrectionFile | None:
     path = storage.correction_path(session_id)
     if not path.exists():
@@ -99,13 +130,17 @@ def process_thermograms(
         }
         metadata["status"] = "processed"
         storage.save_json(storage.metadata_path(session_id), metadata)
-        return {
+        result = {
             "settings": asdict(settings),
             "processed_ready": True,
             "summary": asdict(processed.summary),
             "heat_speed_text": processed.heat_speed_text,
             "effect_text": "Тепловой эффект: выделите температурный интервал",
         }
+        recovery = _build_recovery_warning(validated)
+        if recovery:
+            result["recovery_warning"] = recovery
+        return result
 
     # New pipeline: validate → align → process via ProcessingEngine
     # Re-validate loaded validated thermograms (defensive)
@@ -154,13 +189,17 @@ def process_thermograms(
         }
         metadata["status"] = "processed"
         storage.save_json(storage.metadata_path(session_id), metadata)
-        return {
+        result = {
             "settings": asdict(settings),
             "processed_ready": True,
             "summary": asdict(processed.summary),
             "heat_speed_text": processed.heat_speed_text,
             "effect_text": "Тепловой эффект: выделите температурный интервал",
         }
+        recovery = _build_recovery_warning(re_validated)
+        if recovery:
+            result["recovery_warning"] = recovery
+        return result
 
     # Save results to storage
     storage.save_frame(storage.processed_path(session_id), processed_result.mean_frame)
@@ -175,10 +214,14 @@ def process_thermograms(
     }
     metadata["status"] = "processed"
     storage.save_json(storage.metadata_path(session_id), metadata)
-    return {
+    result = {
         "settings": asdict(settings),
         "processed_ready": True,
         "summary": asdict(processed_result.summary),
         "heat_speed_text": processed_result.heat_speed_text,
         "effect_text": "Тепловой эффект: выделите температурный интервал",
     }
+    recovery = _build_recovery_warning(re_validated)
+    if recovery:
+        result["recovery_warning"] = recovery
+    return result

@@ -10,6 +10,9 @@ from tgapp.application.view_models import page_context
 from tgapp.domain.summary import build_effect_text
 from tgapp.web.deps import ensure_session_cookie, get_config, get_or_create_session_state, get_processing_state, get_storage, get_templates
 
+# Error handling (PLAN_AUDIT §18)
+from tgapp.application.error_responses import generic_error, UserError
+
 router = APIRouter()
 
 
@@ -24,8 +27,11 @@ def effect(request: Request, response: Response, xmin: float | None = Form(None)
     if not isinstance(session_id, str) or not session_id:
         effect_text = "Тепловой эффект: выделите температурный интервал"
     else:
-        processed = storage.load_frame(storage.processed_path(session_id))
-        effect_text = build_effect_text(processed, xmin, xmax, settings.init_mass)
+        try:
+            processed = storage.load_frame(storage.processed_path(session_id))
+            effect_text = build_effect_text(processed, xmin, xmax, settings.init_mass)
+        except Exception:
+            effect_text = "Тепловой эффект: ошибка расчёта"
     context = page_context(
         request=request,
         base_path=get_config(request).public_base_path,

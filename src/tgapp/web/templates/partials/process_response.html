@@ -17,3 +17,22 @@
 {% with oob = true %}
   {% include "partials/upload_status_block.html" %}
 {% endwith %}
+
+{% if error %}
+<div id="error-block" class="error-block" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <div class="alert alert-{{ error.severity }}">
+    <strong>{{ error.message }}</strong>
+    {% if error.details %}
+    <p class="text-muted">{{ error.details }}</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if recovery_warning %}
+<div id="recovery-warning-block" class="recovery-warning-block" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <div class="alert alert-warning">
+    <strong>{{ recovery_warning.message }}</strong>
+  </div>
+</div>
+{% endif %}

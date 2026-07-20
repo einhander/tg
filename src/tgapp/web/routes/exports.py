@@ -10,7 +10,8 @@ from fastapi.responses import FileResponse, PlainTextResponse
 
 from tgapp.application.ports import SessionArchiveService, SessionRepository
 from tgapp.application.use_cases import export_session
-from tgapp.web.deps import get_config, get_or_create_session_state, get_storage
+from tgapp.application.error_responses import archive_corrupted, UserError
+from tgapp.web.deps import get_config, get_or_create_session_state, get_processing_state, get_storage
 
 router = APIRouter(prefix="/export")
 
@@ -36,7 +37,24 @@ def export_session_route(request: Request, response: Response):
     """
     session_state = get_or_create_session_state(request, response)
     storage = get_storage(request)
-    state = export_session(storage, _archive_service(), session_state)
+    try:
+        state = export_session(storage, _archive_service(), session_state)
+    except Exception:
+        # Return a minimal error response without exposing internals
+        from tgapp.application.view_models import page_context
+        from tgapp.web.deps import get_templates, ensure_session_cookie
+        err = archive_corrupted("session archive")
+        context = page_context(
+            request=request,
+            base_path=get_config(request).public_base_path,
+            session_state=session_state,
+            processing_state=get_processing_state(request, session_state),
+            thermogram_settings={},
+            upload_status={"message": "", "status": "error"},
+            error=err.to_dict(),
+        )
+        template_response = get_templates(request).TemplateResponse(request=request, name="partials/upload_status_block.html", context=context)
+        return ensure_session_cookie(request, template_response, session_state)
     sid = session_state.get("session_id")
     if not isinstance(sid, str) or not sid:
         raise HTTPException(status_code=404, detail="Session archive is unavailable")
