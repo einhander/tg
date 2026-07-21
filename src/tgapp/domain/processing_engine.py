@@ -24,6 +24,7 @@ from tgapp.domain.models import (
     PeakResult,
     ProcessingSettings,
     SummaryResult,
+    ThermogramFile,
     ValidatedThermogram,
 )
 from tgapp.domain.peaks import detect_peaks
@@ -36,7 +37,7 @@ from tgapp.domain.smoothing import (
     smooth_temperature_savitzky_golay,
 )
 from tgapp.domain.summary import build_heat_speed_text, build_summary
-from tgapp.domain.validator import validate_parsed
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +59,7 @@ class ProcessingResult:
     heat_speed_text: str
     metadata: dict = field(default_factory=dict)
 
-    @property
-    def mean_frame(self) -> pd.DataFrame:
-        """Legacy accessor — returns derivatives (full frame)."""
-        return self.derivatives
+    
 
 
 # ---------------------------------------------------------------------------
@@ -100,13 +98,8 @@ class ProcessingEngine:
         """
         effective_settings = settings or self.settings
 
-        # 1. Defensive re-validation
-        re_validated = self._re_validate(validated)
-        if not re_validated:
-            return self._empty_result([])
-
-        # 2. Determine common physical range & align
-        aligned = self._align(re_validated, effective_settings.bins)
+        # 1. Determine common physical range & align
+        aligned = self._align(validated, effective_settings.bins)
 
         # 3. Apply temperature correction (if enabled)
         corrected = self._apply_correction(aligned, correction, effective_settings.use_correction)
@@ -120,30 +113,25 @@ class ProcessingEngine:
         # 6. Aggregate traces (mean)
         mean_frame = self._aggregate_traces(smoothed, dmdt_traces, effective_settings)
 
-        # 7. Apply correction to mean frame's deltatemp (inline correction for legacy compat)
-        if effective_settings.use_correction and correction is not None:
-            mean_frame = self._apply_inline_correction(mean_frame, correction, effective_settings.bins)
-
-        # 8. Post-aggregation smoothing
+        # 7. Post-aggregation smoothing
         mean_frame = self._smooth_mean(mean_frame, effective_settings)
 
-        # 9. Detect peaks on unrounded data
+        # 8. Detect peaks on unrounded data
         peaks = detect_peaks(mean_frame, effective_settings)
 
-        # 10. Round for output
+        # 9. Round for output
         mean_frame = self._round_frame(mean_frame)
 
-        # 11. Build summary & heat speed
-        file_names = [v.name for v in re_validated]
+        # 10. Build summary & heat speed
+        file_names = [v.name for v in validated]
         summary = build_summary(
-            # Build minimal ThermogramFile stubs for summary
-            [type("Stub", (), {"name": n})() for n in file_names],
+            [ThermogramFile(name=n) for n in file_names],
             mean_frame,
             peaks,
         )
         heat_speed = build_heat_speed_text(mean_frame)
 
-        # 12. Assemble immutable result
+        # 10. Assemble immutable result
         return ProcessingResult(
             combined=", ".join(file_names),
             mass_smoothed=mean_frame.loc[
@@ -159,32 +147,13 @@ class ProcessingEngine:
             metadata={
                 "correction_applied": effective_settings.use_correction and correction is not None,
                 "settings": asdict(effective_settings),
-                "thermogram_count": len(re_validated),
+                "thermogram_count": len(validated),
             },
         )
 
     # ------------------------------------------------------------------
     # Pipeline steps
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _re_validate(validated: list[ValidatedThermogram]) -> list[ValidatedThermogram]:
-        """Defensive re-validation of already-validated thermograms."""
-        result: list[ValidatedThermogram] = []
-        for v in validated:
-            try:
-                rv = validate_parsed(v.temp, v.deltatemp, v.time, v.mass)
-                result.append(ValidatedThermogram(
-                    name=v.name,
-                    temp=rv.temp,
-                    deltatemp=rv.deltatemp,
-                    time=rv.time,
-                    mass=rv.mass,
-                    metadata=rv.metadata,
-                ))
-            except Exception as exc:
-                logger.warning("Re-validation failed for %s: %s", v.name, exc)
-        return result
 
     @staticmethod
     def _align(

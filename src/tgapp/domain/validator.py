@@ -45,8 +45,9 @@ def validate_parsed(
         raise NonMonotonicAxisError("Время не монотонно (обратное движение)")
 
     # 4. Проверить монотонность температуры (возрастающая или убывающая)
+    # Allow small fluctuations typical of TGA instruments (up to 0.5°C reversal)
     temp_diffs = np.diff(temp)
-    if np.any(temp_diffs < -1e-10):
+    if np.any(temp_diffs < -0.5):
         raise NonMonotonicAxisError("Температура не монотонна (обратное движение)")
 
     # 5. Удалить NaN строки (но НЕ интерполировать начальные/конечные)

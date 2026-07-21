@@ -43,11 +43,12 @@ class SessionStorage:
             raise ValueError(
                 f"Invalid session_id: must be 32-char lowercase hex, got {session_id!r}"
             )
-        resolved = self.ensure().resolve() / session_id
+        root_resolved = self.ensure().resolve()
+        session_resolved = root_resolved / session_id
         # Ensure the resolved path stays inside APP_SESSION_DIR
-        if not str(resolved.resolve()).startswith(str(resolved.parent.resolve()) + os.sep) and resolved.resolve() != resolved.parent.resolve():
+        if not str(session_resolved.resolve()).startswith(str(root_resolved) + os.sep):
             raise ValueError(f"Session path escapes APP_SESSION_DIR: {session_id}")
-        return resolved
+        return session_resolved
 
     def thermogram_dir(self, session_id: str) -> Path:
         path = self.session_dir(session_id) / "thermograms"

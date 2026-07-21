@@ -142,35 +142,15 @@ def process_thermograms(
             result["recovery_warning"] = recovery
         return result
 
-    # New pipeline: validate → align → process via ProcessingEngine
-    # Re-validate loaded validated thermograms (defensive)
-    re_validated: list[ValidatedThermogram] = []
-    for v in validated:
-        try:
-            rv = validate_parsed(v.temp, v.deltatemp, v.time, v.mass)
-            rv = ValidatedThermogram(
-                name=v.name,
-                temp=rv.temp,
-                deltatemp=rv.deltatemp,
-                time=rv.time,
-                mass=rv.mass,
-                metadata=rv.metadata,
-            )
-            re_validated.append(rv)
-        except Exception as e:
-            logger.warning("Validation failed for %s: %s", v.name, e)
-            continue
-
-    if not re_validated:
-        return {"settings": asdict(settings), "processed_ready": False, "summary": {"status": "no-valid-thermograms"}, "heat_speed_text": "Скорость нагрева: недоступна", "effect_text": "Тепловой эффект: выделите температурный интервал"}
-
+    # New pipeline: align → process via ProcessingEngine
+    # validated thermograms are already validated during upload (upload_thermograms.py)
     # Load correction file
     correction = _load_correction_model(storage, session_id)
 
     # Run unified processing engine
     engine = ProcessingEngine(settings=settings)
     try:
-        processed_result = engine.process(re_validated, settings=settings, correction=correction)
+        processed_result = engine.process(validated, settings=settings, correction=correction)
     except Exception as e:
         logger.warning("ProcessingEngine failed, falling back to legacy: %s", e)
         thermograms = _load_thermogram_models(storage, session_id)
@@ -196,14 +176,14 @@ def process_thermograms(
             "heat_speed_text": processed.heat_speed_text,
             "effect_text": "Тепловой эффект: выделите температурный интервал",
         }
-        recovery = _build_recovery_warning(re_validated)
+        recovery = _build_recovery_warning(validated)
         if recovery:
             result["recovery_warning"] = recovery
         return result
 
     # Save results to storage
-    storage.save_frame(storage.processed_path(session_id), processed_result.mean_frame)
-    storage.save_frame(storage.raw_plot_path(session_id), processed_result.mean_frame)
+    storage.save_frame(storage.processed_path(session_id), processed_result.derivatives)
+    storage.save_frame(storage.raw_plot_path(session_id), processed_result.derivatives)
     storage.save_json(storage.settings_path(session_id), asdict(settings))
     metadata = storage.load_json(storage.metadata_path(session_id))
     metadata["last_process"] = {
@@ -221,7 +201,7 @@ def process_thermograms(
         "heat_speed_text": processed_result.heat_speed_text,
         "effect_text": "Тепловой эффект: выделите температурный интервал",
     }
-    recovery = _build_recovery_warning(re_validated)
+    recovery = _build_recovery_warning(validated)
     if recovery:
         result["recovery_warning"] = recovery
     return result

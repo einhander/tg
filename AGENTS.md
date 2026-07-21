@@ -46,21 +46,35 @@ Clean-architecture layers inside `src/tgapp/`:
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| **Web** | `web/` | FastAPI app (`app.py`), routes (`routes/`), session deps (`deps.py`), Jinja2 templates (`templates/`) |
-| **Application** | `application/` | Use cases (`use_cases.py`), DTOs (`dto.py`), session state factories (`session_state.py`), view models (`view_models.py`) |
-| **Domain** | `domain/` | Models (`models.py`), processing logic (`processing.py`), peak detection (`peaks.py`), smoothing (`smoothing.py`), summaries (`summary.py`), thermogram normalization (`thermogram.py`) |
-| **Infrastructure** | `infrastructure/` | File I/O (`storage.py`), file parsing (`file_parsers.py`), plotting helpers (`plotting.py`), session archive serialization (`serialization.py`) — note: `serialization.py` also handles numpy → JSON sanitization |
+| **Web** | `web/` | FastAPI app (`app.py`), routes (`routes/`), session deps (`deps.py`), Jinja2 templates (`templates/`), static files (`static/`) |
+| **Application** | `application/` | Use cases (`use_cases/`), DTOs (`dto.py`), ports (`ports.py`), session state (`session_state.py`), view models (`view_models.py`), error responses (`error_responses.py`) |
+| **Domain** | `domain/` | Models (`models.py`), processing engine (`processing_engine.py`), processing logic (`processing.py`), peak detection (`peaks.py`), smoothing (`smoothing.py`), summaries (`summary.py`), thermogram normalization (`thermogram.py`), alignment (`alignment.py`), correction (`correction.py`), effects (`effects.py`), validation (`validator.py`) |
+| **Infrastructure** | `infrastructure/` | File I/O (`storage.py`), file parsing (`file_parsers.py`), plotting helpers (`plotting.py`), session archive serialization (`serialization.py`) — also handles numpy → JSON sanitization |
 
 **Entry point:** `src/tgapp/main.py` → `AppConfig.from_env()` → `create_app(config)` → `uvicorn.run()`
 
-## Dead code
+## Processing Engine
 
-The following are **dead code** — only imported by `web/app_factory.py`, which is never loaded:
-- `web/app_factory.py` — Dash factory (replaced by FastAPI + Jinja2)
-- `web/layout.py` — Dash layout builder (replaced by Jinja2 templates)
-- `web/callbacks/` — Dash callback registrations (replaced by FastAPI routes + HTMX)
+`domain/processing_engine.py` — unified processing pipeline (PLAN_AUDIT §14):
 
-Safe to remove. Do not treat them as active code.
+```
+parse → validate → normalize units → determine common physical range
+→ align each experiment → smooth each experiment → calculate derivatives
+→ apply correction → aggregate traces → detect peaks → calculate summary
+→ return immutable ProcessingResult
+```
+
+Key steps:
+1. **Re-validation** — defensive check on already-validated thermograms
+2. **Alignment** — interpolate all experiments onto common temperature grid
+3. **Correction** — apply temperature correction curve (if enabled)
+4. **Per-experiment smoothing** — Savitzky-Golay or moving average per trace
+5. **Per-run DTG** — `np.gradient(mass, time)` per experiment, then average
+6. **Aggregation** — mean of mass, temp, time, deltatemp traces
+7. **Inline correction** — correction applied to mean frame's deltatemp (legacy compat)
+8. **Post-aggregation smoothing** — temperature + derivative smoothing on mean
+9. **Peak detection** — scipy `find_peaks` with prominence filtering
+10. **Rounding** — output precision matching legacy pipeline
 
 ## Config (env vars)
 
@@ -71,16 +85,24 @@ Safe to remove. Do not treat them as active code.
 | `APP_DEBUG` | `false` | Enable uvicorn reload |
 | `APP_BASE_PATH` | `/` | URL prefix for reverse-proxy deploys |
 | `APP_SESSION_DIR` | `.session-data` | Where session files live |
+| `APP_MAX_UPLOAD_SIZE` | `52428800` | 50 MB per upload |
+| `APP_MAX_UPLOAD_FILES` | `10` | Max files per upload |
+| `APP_MAX_ARCHIVE_SIZE` | `104857600` | 100 MB max archive |
+| `APP_MAX_DATA_ROWS` | `1000000` | Max data rows per file |
+| `APP_SESSION_TTL` | `86400` | 24 hours session TTL |
+| `APP_MAX_SESSION_SIZE` | `524288000` | 500 MB max session |
 
 ## Session storage
 
 All session data is file-based in `.session-data/{session_id}/`:
 - `thermograms/*.csv` — parsed thermogram frames
 - `raw_thermograms/*.csv` — raw copies
+- `validated_thermograms/*.csv` — validated thermogram frames
 - `correction.csv` — temperature correction file
 - `processed.csv` — processed output
 - `settings.json` — last processing settings
 - `tga2-settings.json` — TGA2 plot settings
+- `thermogram_settings.json` — unified thermogram view settings
 - `metadata.json` — status, original names, last process summary
 
 Session ID is stored in an httponly cookie (`tgapp_session_id`). No server-side session store.
@@ -108,8 +130,21 @@ Tab structure (`index.html`):
 - `ThermogramFile` — uploaded thermogram data (name, DataFrame, metadata)
 - `CorrectionFile` — temperature correction curve
 - `ProcessingSettings` — all processing parameters (mass, smoothing, bins, difflag, span, etc.)
+- `ThermogramViewSettings` — plot visibility controls (hide TG/DTG/peaks, SG parameters)
 - `ThermogramProcessed` — combined/smoothed/derivative frames, peaks, summary
-- `PeakResult` — detected peak (x, y, label, kind)
+- `PeakResult` — detected peak (x, y, label, kind, extremum)
+- `SummaryResult` — summary lines and metrics
+- `ParsedThermogram` — raw parsed data (temp, deltatemp, time, mass as numpy arrays)
+- `ValidatedThermogram` — validated data (monotonicity checks, row counts)
+- `AlignedThermogram` — interpolated on common temperature grid
+- `ProcessingResult` — immutable result of the full processing pipeline
+
+## Application layer
+
+- **Use cases** (`use_cases/`) — `create_session`, `upload_thermograms`, `process_thermograms`, `get_plot_payload`, `get_raw_plot`, `calculate_effect`, `export_session`, `import_session`
+- **Ports** (`ports.py`) — `SessionRepository`, `ThermogramParser`, `SessionArchiveService`, `ProcessingResultRepository` (Protocol-based dependency inversion)
+- **DTOs** (`dto.py`) — `UploadPayload`, `UiMessage`, `PlotPayload`, `SessionStateDto`, `ProcessingStateDto`
+- **Error responses** (`error_responses.py`) — user-facing messages, severity levels, factory functions mapping domain exceptions to `UserError`
 
 ## File formats
 
@@ -123,11 +158,34 @@ Sample data lives in `samples/` (various TGA formats).
 
 Managed by **uv** (`uv.lock`). Python ≥3.10.
 
-Key deps: fastapi, plotly, pandas, numpy, scipy, jinja2, uvicorn, python-multipart.
+**Runtime:** fastapi, jinja2, plotly, pandas, python-multipart, scipy, numpy, uvicorn
+
+**Dev:** pytest, pytest-cov, httpx, ruff
+
+## Security
+
+- Session IDs validated against UUID format before filesystem access
+- Upload size limits enforced (configurable via env vars)
+- Archive unpacking size limits enforced (PLAN_AUDIT §16.4)
+- ZIP entries validated against path traversal
+- Cookie uses `httponly=True`, `samesite="lax"`, `secure` flag in production
+- No server-side session store — file-based with TTL
+
+## Scientific improvements
+
+- **Per-run DTG:** dm/dt calculated per experiment via `np.gradient`, then averaged — not on aggregated data
+- **Linear regression heating rate:** slope of temp vs time in °C/min (not average ΔT/Δt)
+- **Baseline integration:** trapezoidal integration with baseline correction for peak area
+- **scipy find_peaks:** proper peak detection with prominence filtering (not simple diff-based)
+- **Savitzky-Golay smoothing:** `scipy.signal.savgol_filter` for mass, temperature, and derivative columns
+
+## Error handling
+
+User-facing error messages via `application/error_responses.py` — all in Russian, never expose internal paths or tracebacks. Error severity levels: info, warning, error. Domain exceptions (`ThermogramValidationError` hierarchy) map to user-friendly messages.
 
 ## Package layout
 
-`src/` layout via setuptools. Import path is `tgapp.*`. No tests currently exist.
+`src/` layout via setuptools. Import path is `tgapp.*`.
 
 ## Testing
 
@@ -137,7 +195,6 @@ Prefer targeted smoke: compileall + import check + route-specific manual check.
 ## Gotchas
 
 - `APP_BASE_PATH` normalized in `config.py`; never hardcode root-relative URLs bypassing it.
-- `README.md` / `pyproject.toml` contain stale migration text. Trust `src/tgapp/` layout.
 - Mixchar/Деконволюция tab is placeholder. Do not use as migration proof.
 - Templates load htmx and Plotly from CDNs. App not local-only yet.
 - `/export/plot` returns `501 Not Implemented` — plot export not yet built.
@@ -145,8 +202,9 @@ Prefer targeted smoke: compileall + import check + route-specific manual check.
 
 ## High-value files
 
-- Processing: `application/use_cases.py`, `domain/processing.py`, `domain/peaks.py`, `domain/summary.py`
-- Smoothing/binning: `domain/smoothing.py`, `domain/thermogram.py`
+- Processing: `domain/processing_engine.py`, `domain/processing.py`, `domain/peaks.py`, `domain/summary.py`
+- Smoothing/binning: `domain/smoothing.py`, `domain/thermogram.py`, `domain/alignment.py`
+- Application: `application/use_cases/`, `application/ports.py`, `application/error_responses.py`
 - Plumbing: `web/deps.py`, `infrastructure/storage.py`, `infrastructure/file_parsers.py`
 - Routes: `web/routes/pages.py`, `web/routes/processing.py`, `web/routes/uploads.py`
 - Plotting: `infrastructure/plotting.py`, `infrastructure/serialization.py`
