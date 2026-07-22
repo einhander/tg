@@ -48,33 +48,32 @@ Clean-architecture layers inside `src/tgapp/`:
 |---|---|---|
 | **Web** | `web/` | FastAPI app (`app.py`), routes (`routes/`), session deps (`deps.py`), Jinja2 templates (`templates/`), static files (`static/`) |
 | **Application** | `application/` | Use cases (`use_cases/`), DTOs (`dto.py`), ports (`ports.py`), session state (`session_state.py`), view models (`view_models.py`), error responses (`error_responses.py`) |
-| **Domain** | `domain/` | Models (`models.py`), processing engine (`processing_engine.py`), processing logic (`processing.py`), peak detection (`peaks.py`), smoothing (`smoothing.py`), summaries (`summary.py`), thermogram normalization (`thermogram.py`), alignment (`alignment.py`), correction (`correction.py`), effects (`effects.py`), validation (`validator.py`) |
+| **Domain** | `domain/` | Models (`models.py`), processing engine (`processing_engine.py`), peak detection (`peaks.py`), smoothing (`smoothing.py`), summaries (`summary.py`), thermogram normalization (`thermogram.py`), alignment (`alignment.py`), correction (`correction.py`), effects (`effects.py`), validation (`validator.py`) |
 | **Infrastructure** | `infrastructure/` | File I/O (`storage.py`), file parsing (`file_parsers.py`), plotting helpers (`plotting.py`), session archive serialization (`serialization.py`) — also handles numpy → JSON sanitization |
 
 **Entry point:** `src/tgapp/main.py` → `AppConfig.from_env()` → `create_app(config)` → `uvicorn.run()`
 
 ## Processing Engine
 
-`domain/processing_engine.py` — unified processing pipeline (PLAN_AUDIT §14):
+`domain/processing_engine.py` — unified processing pipeline (PLAN_PRE_OZF):
 
 ```
 parse → validate → normalize units → determine common physical range
-→ align each experiment → smooth each experiment → calculate derivatives
-→ apply correction → aggregate traces → detect peaks → calculate summary
+→ align each experiment → smooth each experiment → calculate derivatives (np.gradient, edge_order=2)
+→ apply correction (strict, no silent skip) → aggregate traces → detect peaks → calculate summary
 → return immutable ProcessingResult
 ```
 
 Key steps:
 1. **Re-validation** — defensive check on already-validated thermograms
 2. **Alignment** — interpolate all experiments onto common temperature grid
-3. **Correction** — apply temperature correction curve (if enabled)
+3. **Correction** — apply temperature correction curve (if enabled); raises `CorrectionRangeError` if missing/misaligned
 4. **Per-experiment smoothing** — Savitzky-Golay or moving average per trace
-5. **Per-run DTG** — `np.gradient(mass, time)` per experiment, then average
+5. **Per-run DTG** — `np.gradient(mass, time, edge_order=2)` per experiment, then average
 6. **Aggregation** — mean of mass, temp, time, deltatemp traces
-7. **Inline correction** — correction applied to mean frame's deltatemp (legacy compat)
-8. **Post-aggregation smoothing** — temperature + derivative smoothing on mean
-9. **Peak detection** — scipy `find_peaks` with prominence filtering
-10. **Rounding** — output precision matching legacy pipeline
+7. **Post-aggregation smoothing** — derivative (DTG) smoothing on mean; temperature is NEVER smoothed (physical axis)
+8. **Peak detection** — scipy `find_peaks` with prominence filtering
+9. **Rounding** — output precision matching legacy pipeline
 
 ## Config (env vars)
 
@@ -173,11 +172,22 @@ Managed by **uv** (`uv.lock`). Python ≥3.10.
 
 ## Scientific improvements
 
-- **Per-run DTG:** dm/dt calculated per experiment via `np.gradient`, then averaged — not on aggregated data
+- **Per-run DTG:** dm/dt calculated per experiment via `np.gradient(..., edge_order=2)`, then averaged — not on aggregated data
 - **Linear regression heating rate:** slope of temp vs time in °C/min (not average ΔT/Δt)
 - **Baseline integration:** trapezoidal integration with baseline correction for peak area
 - **scipy find_peaks:** proper peak detection with prominence filtering (not simple diff-based)
 - **Savitzky-Golay smoothing:** `scipy.signal.savgol_filter` for mass, temperature, and derivative columns
+- **Temperature never smoothed:** temp is a physical axis
+- **Correction strict:** raises `CorrectionRangeError` if correction requested but missing/misaligned
+- **Streaming uploads:** 8KB chunks, no Base64 encoding, size limit enforcement
+
+## Domain exceptions
+
+- `ThermogramValidationError` — base class for validation errors
+- `DerivativeCalculationError` — invalid derivative computation (NaN/inf, non-monotonic time, insufficient data)
+- `CorrectionRangeError` — correction file doesn't cover working range or missing
+- `NonMonotonicAxisError` — axis not strictly increasing
+- `InsufficientDataError` — too few data points
 
 ## Error handling
 
@@ -202,7 +212,7 @@ Prefer targeted smoke: compileall + import check + route-specific manual check.
 
 ## High-value files
 
-- Processing: `domain/processing_engine.py`, `domain/processing.py`, `domain/peaks.py`, `domain/summary.py`
+- Processing: `domain/processing_engine.py`, `domain/peaks.py`, `domain/summary.py`
 - Smoothing/binning: `domain/smoothing.py`, `domain/thermogram.py`, `domain/alignment.py`
 - Application: `application/use_cases/`, `application/ports.py`, `application/error_responses.py`
 - Plumbing: `web/deps.py`, `infrastructure/storage.py`, `infrastructure/file_parsers.py`
