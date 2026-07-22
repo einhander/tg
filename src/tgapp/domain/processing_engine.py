@@ -21,6 +21,8 @@ from tgapp.domain.correction import apply_correction_to_aligned
 from tgapp.domain.models import (
     AlignedThermogram,
     CorrectionFile,
+    CorrectionRangeError,
+    DerivativeCalculationError,
     PeakResult,
     ProcessingSettings,
     SummaryResult,
@@ -33,13 +35,36 @@ from tgapp.domain.smoothing import (
     smooth_derivative,
     smooth_derivative_savitzky_golay,
     smooth_mass,
-    smooth_temperature,
-    smooth_temperature_savitzky_golay,
 )
 from tgapp.domain.summary import build_heat_speed_text, build_summary
 
 
 logger = logging.getLogger(__name__)
+
+TIME_EPSILON = 1e-9
+
+
+def compute_dmdt_per_run(frame: pd.DataFrame) -> pd.Series:
+    """Calculate dm/dt for one experiment via np.gradient.
+
+    Uses central differences (np.gradient), which give
+    second-order accurate derivative.
+
+    Args:
+        frame: DataFrame with 'mass' and 'time' columns
+
+    Returns:
+        Series with dm/dt in mass/time units
+    """
+    if frame.empty or "mass" not in frame.columns or "time" not in frame.columns:
+        return pd.Series([np.nan] * len(frame), name="dmdt", dtype="float64", index=frame.index)
+
+    mass = frame["mass"].to_numpy(dtype=float)
+    time = frame["time"].to_numpy(dtype=float)
+
+    dmdt = np.gradient(mass, time)
+
+    return pd.Series(dmdt, name="dmdt", dtype="float64", index=frame.index)
 
 
 # ---------------------------------------------------------------------------
@@ -54,10 +79,11 @@ class ProcessingResult:
     mass_smoothed: pd.DataFrame  # temp, mass
     temp_smoothed: pd.DataFrame  # time, temp, deltatemp
     derivatives: pd.DataFrame  # all columns (temp, mass, time, deltatemp, dmdt)
-    peaks: list[PeakResult]
+    peaks: tuple[PeakResult, ...]
     summary: SummaryResult
     heat_speed_text: str
     metadata: dict = field(default_factory=dict)
+    per_run: tuple[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, np.ndarray], ...] = field(default_factory=tuple)  # Per-experiment traces
 
     
 
@@ -110,6 +136,20 @@ class ProcessingEngine:
         # 5. Calculate dm/dt for each experiment
         dmdt_traces = [self._compute_dmdt(frame) for frame in smoothed]
 
+        # 5b. Collect per-run data
+        per_run_data = []
+        for i, frame in enumerate(smoothed):
+            run_data = (
+                smoothed[i]["mass"].to_numpy(dtype=float),
+                smoothed[i]["time"].to_numpy(dtype=float),
+                smoothed[i]["temp"].to_numpy(dtype=float),
+                smoothed[i].get("deltatemp", pd.Series(dtype=float)).to_numpy(dtype=float) if "deltatemp" in smoothed[i].columns else None,
+                dmdt_traces[i].to_numpy(dtype=float),
+            )
+            per_run_data.append(run_data)
+
+        per_run = tuple(per_run_data)
+
         # 6. Aggregate traces (mean)
         mean_frame = self._aggregate_traces(smoothed, dmdt_traces, effective_settings)
 
@@ -141,14 +181,21 @@ class ProcessingEngine:
                 :, [c for c in ("time", "temp", "deltatemp") if c in mean_frame.columns]
             ].copy(),
             derivatives=mean_frame.copy(),
-            peaks=peaks,
+            peaks=tuple(peaks),
             summary=summary,
             heat_speed_text=heat_speed,
             metadata={
                 "correction_applied": effective_settings.use_correction and correction is not None,
                 "settings": asdict(effective_settings),
                 "thermogram_count": len(validated),
+                "derivative_definition": "dm/dt",
+                "derivative_units": "масса/время",
+                "gradient_method": "numpy.gradient",
+                "gradient_edge_order": 2,
+                "per_run_derivative": True,
+                "processing_version": "2.0",
             },
+            per_run=per_run,
         )
 
     # ------------------------------------------------------------------
@@ -169,14 +216,22 @@ class ProcessingEngine:
         correction: CorrectionFile | None,
         use_correction: bool,
     ) -> list[AlignedThermogram]:
-        """Apply temperature correction to aligned thermograms."""
+        """Apply temperature correction to aligned thermograms.
+
+        If use_correction is True and correction is None → raise CorrectionRangeError.
+        If correction fails → re-raise the exception (no silent skip).
+        """
         if not use_correction or correction is None:
             return aligned
-        try:
-            return apply_correction_to_aligned(aligned, correction)
-        except Exception as exc:
-            logger.warning("Correction skipped: %s", exc)
-            return aligned
+
+        # If correction is requested but missing, raise
+        if correction is None:
+            raise CorrectionRangeError(
+                "Температурная коррекция запрошена, но correction-файл не загружен."
+            )
+
+        # Apply correction — let exceptions propagate
+        return apply_correction_to_aligned(aligned, correction)
 
     @staticmethod
     def _smooth_each(
@@ -206,13 +261,33 @@ class ProcessingEngine:
 
     @staticmethod
     def _compute_dmdt(frame: pd.DataFrame) -> pd.Series:
-        """Calculate dm/dt for one experiment via np.gradient."""
+        """Calculate dm/dt for one experiment via np.gradient.
+
+        Pre-conditions (caller must ensure):
+        - frame not empty
+        - 'mass' and 'time' columns present
+        - time strictly increasing
+        - all values finite
+        """
         if frame.empty or "mass" not in frame.columns or "time" not in frame.columns:
-            return pd.Series([np.nan] * 500, name="dmdt", dtype="float64")
+            raise DerivativeCalculationError("Недостаточно данных для расчёта производной: отсутствуют колонки mass или time")
+
+        if len(frame) < 3:
+            raise DerivativeCalculationError(f"Недостаточно точек для производной: {len(frame)} < 3")
 
         mass = frame["mass"].to_numpy(dtype=float)
         time = frame["time"].to_numpy(dtype=float)
-        dmdt = np.gradient(mass, time)
+
+        if not np.all(np.isfinite(mass)):
+            raise DerivativeCalculationError("Масса содержит NaN/inf")
+        if not np.all(np.isfinite(time)):
+            raise DerivativeCalculationError("Время содержит NaN/inf")
+
+        time_diffs = np.diff(time)
+        if np.any(time_diffs <= 1e-9):
+            raise DerivativeCalculationError("Время не строго возрастает")
+
+        dmdt = np.gradient(mass, time, edge_order=2)
         return pd.Series(dmdt, name="dmdt", dtype="float64", index=frame.index)
 
     @staticmethod
@@ -248,7 +323,7 @@ class ProcessingEngine:
     def _average_dmdt(traces: list[pd.Series]) -> pd.Series:
         """Average dm/dt traces, handling length mismatches."""
         if not traces:
-            return pd.Series([np.nan] * 500, name="dmdt", dtype="float64")
+            raise DerivativeCalculationError("Нет данных для усреднения производной")
 
         lengths = {len(t) for t in traces}
         if len(lengths) == 1:
@@ -273,57 +348,24 @@ class ProcessingEngine:
         return pd.Series(np.nanmean(stacked, axis=0), name="dmdt", dtype="float64")
 
     @staticmethod
-    def _apply_inline_correction(
-        frame: pd.DataFrame,
-        correction: CorrectionFile,
-        bins: int,
-    ) -> pd.DataFrame:
-        """Apply correction to mean frame's deltatemp (legacy compat path)."""
-        if frame.empty or "deltatemp" not in frame.columns:
-            return frame
-
-        # Resample correction to match frame length
-        corr_frame = correction.frame.copy()
-        corr_frame["temp"] = pd.to_numeric(corr_frame["temp"], errors="coerce")
-        corr_frame["deltatemp"] = pd.to_numeric(corr_frame["deltatemp"], errors="coerce")
-        valid = corr_frame.dropna(subset=["temp", "deltatemp"])
-        if len(valid) < 2:
-            return frame
-
-        # Simple interpolation on the correction's temp axis
-        corr_temp = valid["temp"].to_numpy(dtype=float)
-        corr_deltatemp = valid["deltatemp"].to_numpy(dtype=float)
-
-        # Interpolate correction onto the mean frame's temperature grid
-        if "temp" in frame.columns:
-            mean_temp = frame["temp"].to_numpy(dtype=float)
-            correction_values = np.interp(mean_temp, corr_temp, corr_deltatemp)
-            result = frame.copy()
-            result["deltatemp"] = result["deltatemp"].to_numpy(dtype=float) + correction_values
-            return result
-
-        return frame
-
-    @staticmethod
     def _smooth_mean(
         frame: pd.DataFrame,
         settings: ProcessingSettings,
     ) -> pd.DataFrame:
-        """Post-aggregation smoothing on the mean frame."""
+        """Post-aggregation smoothing on the mean frame.
+
+        IMPORTANT: Only signal columns are smoothed (mass, deltatemp, dmdt).
+        Physical axes (temp, time) are NEVER smoothed.
+        """
         if frame.empty:
             return frame
 
         result = frame
 
-        # Temperature smoothing
-        if settings.sg_mode:
-            result = smooth_temperature_savitzky_golay(
-                result, settings.sg_window, settings.sg_polyorder,
-            )
-        else:
-            result = smooth_temperature(result, settings.temp_smoothing)
+        # NO temperature smoothing — temp is a physical axis
+        # Only smooth signals: deltatemp, dmdt
 
-        # Derivative smoothing
+        # Derivative smoothing (DTG)
         if settings.sg_mode:
             result = smooth_derivative_savitzky_golay(
                 result, settings.sg_window, settings.sg_polyorder,
@@ -354,7 +396,7 @@ class ProcessingEngine:
             mass_smoothed=pd.DataFrame(),
             temp_smoothed=pd.DataFrame(),
             derivatives=pd.DataFrame(),
-            peaks=[],
+            peaks=(),
             summary=SummaryResult(
                 lines=["Нет валидных термограмм для обработки"],
                 metrics={"thermogram_count": 0, "processed_rows": 0, "peak_count": 0},

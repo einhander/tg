@@ -1,7 +1,76 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
+
+
+def _finite_segments(values: np.ndarray) -> list[slice]:
+    """Return slices of contiguous finite segments."""
+    valid = np.isfinite(values)
+    segments: list[slice] = []
+    start = None
+    for i, v in enumerate(valid):
+        if v and start is None:
+            start = i
+        elif not v and start is not None:
+            segments.append(slice(start, i))
+            start = None
+    if start is not None:
+        segments.append(slice(start, len(values)))
+    return segments
+
+
+def _savgol_values(values: np.ndarray, window: int, polyorder: int, mode: str = "mirror") -> np.ndarray:
+    """Apply Savitzky-Golay filter, processing finite segments independently.
+
+    Args:
+        values: input array (may contain NaN gaps)
+        window: filter window size
+        polyorder: polynomial order
+        mode: filter mode passed to scipy.signal.savgol_filter
+
+    Returns:
+        Smoothed array, NaN gaps preserved
+    """
+    n = len(values)
+    if n < 3:
+        return values.copy()
+
+    # Validate window
+    win = window
+    if win % 2 == 0:
+        raise ValueError(f"Сavitzky-Golay window must be odd, got {win}")
+    if win < 3:
+        return values.copy()
+    if win > n:
+        raise ValueError(f"Сavitzky-Golay window {win} exceeds array length {n}")
+
+    pord = min(max(polyorder, 1), win - 2)
+
+    segments = _finite_segments(values)
+    result = values.copy()
+
+    for seg in segments:
+        seg_len = seg.stop - seg.start
+        if seg_len < 3:
+            # Segment too short, skip smoothing
+            continue
+        if win > seg_len:
+            # Window larger than segment, skip
+            continue
+
+        seg_values = values[seg]
+        try:
+            from scipy.signal import savgol_filter
+            filtered = savgol_filter(seg_values, win, pord, mode=mode)
+            result[seg] = filtered
+        except ValueError:
+            # If scipy fails, leave segment unchanged
+            pass
+
+    return result
 
 
 def smooth_mass(frame: pd.DataFrame, window: int) -> pd.DataFrame:
@@ -20,16 +89,31 @@ def smooth_series_savitzky_golay(series: pd.Series, window: int, polyorder: int 
         return numeric
 
     smoothed = numeric.copy()
-    filtered = _savgol_values(values[valid], window, polyorder)
-    smoothed.loc[valid] = filtered
+    try:
+        filtered = _savgol_values(values[valid], window, polyorder)
+        smoothed.loc[valid] = filtered
+    except ValueError as e:
+        # If validation fails, return original
+        return numeric
     return smoothed
 
 
-def smooth_column_savitzky_golay(frame: pd.DataFrame, column: str, window: int, polyorder: int) -> pd.DataFrame:
-    """Apply Savitzky-Golay filter to one frame column."""
+def smooth_column_savitzky_golay(frame: pd.DataFrame, column: str, window: int, polyorder: int, mode: str = "mirror") -> pd.DataFrame:
+    """Apply Savitzky-Golay filter to one frame column.
+
+    Validates parameters strictly. Raises ValueError on invalid params.
+    """
     smoothed = frame.copy()
     if column not in smoothed.columns or smoothed.empty:
         return smoothed
+
+    # Validate parameters
+    if window % 2 == 0:
+        raise ValueError(f"Сavitzky-Golay window must be odd, got {window}")
+    if polyorder < 1:
+        raise ValueError(f"Сavitzky-Golay polyorder must be >= 1, got {polyorder}")
+    if polyorder >= window:
+        raise ValueError(f"Сavitzky-Golay polyorder ({polyorder}) must be less than window ({window})")
 
     smoothed[column] = smooth_series_savitzky_golay(smoothed[column], window, polyorder)
     return smoothed
@@ -41,7 +125,13 @@ def smooth_mass_savitzky_golay(frame: pd.DataFrame, window: int, polyorder: int)
 
 
 def smooth_temperature_savitzky_golay(frame: pd.DataFrame, window: int, polyorder: int = 3) -> pd.DataFrame:
-    """Savitzky-Golay smoothing for temperature column."""
+    """DEPRECATED: Temperature smoothing is no longer applied in the scientific pipeline."""
+    warnings.warn(
+        "smooth_temperature_savitzky_golay is deprecated. "
+        "Physical axes (temperature, time) must not be smoothed.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return smooth_column_savitzky_golay(frame, "temp", window, polyorder)
 
 
@@ -50,29 +140,14 @@ def smooth_derivative_savitzky_golay(frame: pd.DataFrame, window: int, polyorder
     return smooth_column_savitzky_golay(frame, "dmdt", window, polyorder)
 
 
-def _savgol_values(values: np.ndarray, window: int, polyorder: int) -> np.ndarray:
-    n = len(values)
-    if n < 3:
-        return values.copy()
-
-    win = max(window, 3)
-    if win % 2 == 0:
-        win += 1
-    if win > n:
-        win = n if n % 2 == 1 else n - 1
-    if win < 3:
-        return values.copy()
-
-    pord = min(max(polyorder, 1), win - 2)
-
-    from scipy.signal import savgol_filter
-    try:
-        return savgol_filter(values, win, pord)
-    except ValueError:
-        return values.copy()
-
-
 def smooth_temperature(frame: pd.DataFrame, window: int) -> pd.DataFrame:
+    """DEPRECATED: Temperature smoothing is no longer applied in the scientific pipeline."""
+    warnings.warn(
+        "smooth_temperature is deprecated. "
+        "Physical axes (temperature, time) must not be smoothed.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     smoothed = frame.copy()
     if "temp" in smoothed.columns and not smoothed.empty and window > 1:
         smoothed["temp"] = smoothed["temp"].rolling(max(window, 1), min_periods=1, center=True).mean()

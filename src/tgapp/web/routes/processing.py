@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import asdict
 from typing import Any, cast
 
-from fastapi import APIRouter, Form, Request, Response
+from fastapi import APIRouter, Form, HTTPException, Request, Response
 
 from tgapp.application.use_cases import process_thermograms
 from tgapp.application.view_models import page_context
 from tgapp.domain.models import ProcessingSettings, ThermogramViewSettings
 from tgapp.infrastructure.plotting import build_raw_plot, figure_to_json
+from tgapp.infrastructure.storage import SessionLock
 from tgapp.web.deps import ensure_session_cookie, get_config, get_or_create_session_state, get_processing_state, get_storage, get_templates, get_thermogram_settings, save_thermogram_settings
 
 # Error handling (PLAN_AUDIT §18)
@@ -28,6 +30,8 @@ from tgapp.domain.models import (
 )
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 def _as_bool(value: str | None) -> bool:
@@ -156,89 +160,131 @@ def _load_raw_plot_frame(storage, session_state):
 @router.post("/process", name="process")
 async def process(request: Request, response: Response, peak_prominence_sigma: str | None = Form(None), sg_mode: str | None = Form(None), sg_window: str | None = Form(None), sg_mass_window: str | None = Form(None), sg_temp_window: str | None = Form(None), sg_dtg_window: str | None = Form(None), hide_tg: str | None = Form(None), hide_dta: str | None = Form(None), hide_dtg: str | None = Form(None), hide_peaks_dta: str | None = Form(None), hide_peaks_dmdt: str | None = Form(None), hide_inflections_tg: str | None = Form(None), show_tg: str | None = Form(None), show_dta: str | None = Form(None), show_dtg: str | None = Form(None), show_peaks_dta: str | None = Form(None), show_peaks_dmdt: str | None = Form(None), show_inflections_tg: str | None = Form(None)):
     session_state = get_or_create_session_state(request, response)
-    existing_thermogram_settings = get_thermogram_settings(request, session_state)
-    existing_processing = get_processing_state(request, session_state)
-    form_values = _build_form_values(
-        peak_prominence_sigma=peak_prominence_sigma,
-        sg_mode=sg_mode,
-        sg_window=sg_window,
-        sg_mass_window=sg_mass_window,
-        sg_temp_window=sg_temp_window,
-        sg_dtg_window=sg_dtg_window,
-        hide_tg=hide_tg,
-        hide_dta=hide_dta,
-        hide_dtg=hide_dtg,
-        hide_peaks_dta=hide_peaks_dta,
-        hide_peaks_dmdt=hide_peaks_dmdt,
-        hide_inflections_tg=hide_inflections_tg,
-        show_tg=show_tg,
-        show_dta=show_dta,
-        show_dtg=show_dtg,
-        show_peaks_dta=show_peaks_dta,
-        show_peaks_dmdt=show_peaks_dmdt,
-        show_inflections_tg=show_inflections_tg,
-    )
-    thermogram_settings = _build_thermogram_settings(existing_thermogram_settings, form_values)
-    save_thermogram_settings(request, session_state, asdict(thermogram_settings))
-
-    processing_settings = _build_processing_settings(cast(dict[str, Any], existing_processing.get("settings", {})), thermogram_settings)
     storage = get_storage(request)
-    # PLAN_AUDIT §17.5: offload CPU-bound processing to thread pool
-    try:
-        processing_state = await asyncio.to_thread(
-            process_thermograms, storage, session_state, processing_settings
-        )
-    except NoCommonRangeError:
-        processing_state = {
-            "settings": asdict(processing_settings),
-            "processed_ready": False,
-            "summary": {"status": "no-common-range"},
-            "heat_speed_text": "Скорость нагрева: недоступна",
-            "effect_text": "Тепловой эффект: выделите температурный интервал",
-            "error": no_common_range().to_dict(),
-        }
-    except CorrectionRangeError as e:
-        # Extract range info from the exception details if available
-        details = getattr(e, "details", {})
-        if isinstance(details, dict):
-            err = correction_coverage_error(
-                details.get("min_temp", 0), details.get("max_temp", 0),
-                details.get("corr_min", 0), details.get("corr_max", 0),
-            )
-        else:
-            err = generic_error(str(e))
-        processing_state = {
-            "settings": asdict(processing_settings),
-            "processed_ready": False,
-            "summary": {"status": "correction-range-error"},
-            "heat_speed_text": "Скорость нагрева: недоступна",
-            "effect_text": "Тепловой эффект: выделите температурный интервал",
-            "error": err.to_dict(),
-        }
-    except ThermogramValidationError as e:
-        processing_state = {
-            "settings": asdict(processing_settings),
-            "processed_ready": False,
-            "summary": {"status": "validation-error"},
-            "heat_speed_text": "Скорость нагрева: недоступна",
-            "effect_text": "Тепловой эффект: выделите температурный интервал",
-            "error": UserError(message=str(e), severity=ErrorSeverity.ERROR).to_dict(),
-        }
-    except Exception as e:
-        processing_state = {
-            "settings": asdict(processing_settings),
-            "processed_ready": False,
-            "summary": {"status": "error"},
-            "heat_speed_text": "Скорость нагрева: недоступна",
-            "effect_text": "Тепловой эффект: выделите температурный интервал",
-            "error": generic_error().to_dict(),
-        }
+    session_id = session_state.get("session_id", "")
+    if not isinstance(session_id, str) or not session_id:
+        raise HTTPException(status_code=500, detail="Invalid session")
 
-    # Add recovery warning if present in processing_state
-    error_dict = processing_state.get("error") if isinstance(processing_state, dict) else None
-    recovery_dict = processing_state.get("recovery_warning") if isinstance(processing_state, dict) else None
-    return _render_process_response(
-        request, response, session_state, processing_state,
-        processing_settings, thermogram_settings,
-        error=error_dict, recovery_warning=recovery_dict,
-    )
+    # PLAN_AUDIT §17.2: exclusive lock on session during processing
+    lock = SessionLock(storage, session_id)
+    try:
+        lock.acquire()
+    except RuntimeError:
+        processing_state = {
+            "settings": {},
+            "processed_ready": False,
+            "summary": {"status": "locked"},
+            "heat_speed_text": "Скорость нагрева: недоступна",
+            "effect_text": "Тепловой эффект: недоступен",
+            "error": UserError(
+                message="Сессия заблокирована. Повторите попытку через несколько секунд.",
+                severity=ErrorSeverity.WARNING,
+            ).to_dict(),
+        }
+        return _render_process_response(
+            request, response, session_state, processing_state,
+            ProcessingSettings(), ThermogramViewSettings(),
+            error=processing_state.get("error"),
+        )
+
+    try:
+        existing_thermogram_settings = get_thermogram_settings(request, session_state)
+        existing_processing = get_processing_state(request, session_state)
+        form_values = _build_form_values(
+            peak_prominence_sigma=peak_prominence_sigma,
+            sg_mode=sg_mode,
+            sg_window=sg_window,
+            sg_mass_window=sg_mass_window,
+            sg_temp_window=sg_temp_window,
+            sg_dtg_window=sg_dtg_window,
+            hide_tg=hide_tg,
+            hide_dta=hide_dta,
+            hide_dtg=hide_dtg,
+            hide_peaks_dta=hide_peaks_dta,
+            hide_peaks_dmdt=hide_peaks_dmdt,
+            hide_inflections_tg=hide_inflections_tg,
+            show_tg=show_tg,
+            show_dta=show_dta,
+            show_dtg=show_dtg,
+            show_peaks_dta=show_peaks_dta,
+            show_peaks_dmdt=show_peaks_dmdt,
+            show_inflections_tg=show_inflections_tg,
+        )
+        thermogram_settings = _build_thermogram_settings(existing_thermogram_settings, form_values)
+        save_thermogram_settings(request, session_state, asdict(thermogram_settings))
+
+        processing_settings = _build_processing_settings(cast(dict[str, Any], existing_processing.get("settings", {})), thermogram_settings)
+
+        # PLAN_AUDIT §17.5: offload CPU-bound processing to thread pool
+        try:
+            processing_state = await asyncio.to_thread(
+                process_thermograms, storage, session_state, processing_settings
+            )
+        except NoCommonRangeError:
+            processing_state = {
+                "settings": asdict(processing_settings),
+                "processed_ready": False,
+                "summary": {"status": "no-common-range"},
+                "heat_speed_text": "Скорость нагрева: недоступна",
+                "effect_text": "Тепловой эффект: выделите температурный интервал",
+                "error": no_common_range().to_dict(),
+            }
+        except CorrectionRangeError as e:
+            details = getattr(e, "details", {})
+            if isinstance(details, dict):
+                err = correction_coverage_error(
+                    details.get("min_temp", 0), details.get("max_temp", 0),
+                    details.get("corr_min", 0), details.get("corr_max", 0),
+                )
+            else:
+                err = generic_error(str(e))
+            processing_state = {
+                "settings": asdict(processing_settings),
+                "processed_ready": False,
+                "summary": {"status": "correction-range-error"},
+                "heat_speed_text": "Скорость нагрева: недоступна",
+                "effect_text": "Тепловой эффект: выделите температурный интервал",
+                "error": err.to_dict(),
+            }
+        except ThermogramValidationError as e:
+            processing_state = {
+                "settings": asdict(processing_settings),
+                "processed_ready": False,
+                "summary": {"status": "validation-error"},
+                "heat_speed_text": "Скорость нагрева: недоступна",
+                "effect_text": "Тепловой эффект: выделите температурный интервал",
+                "error": UserError(message=str(e), severity=ErrorSeverity.ERROR).to_dict(),
+            }
+        except Exception as e:
+            processing_state = {
+                "settings": asdict(processing_settings),
+                "processed_ready": False,
+                "summary": {"status": "error"},
+                "heat_speed_text": "Скорость нагрева: недоступна",
+                "effect_text": "Тепловой эффект: выделите температурный интервал",
+                "error": generic_error().to_dict(),
+            }
+
+        # PLAN_AUDIT §17.3: check session size after processing
+        config = get_config(request)
+        try:
+            storage.check_session_size(session_id, config.max_session_size)
+        except ValueError as e:
+            logger.warning("Session size exceeded after processing: %s", e)
+            # Data already saved — mark as ready but log warning
+            processing_state.setdefault("summary", {})["status"] = "session-size-exceeded"
+            processing_state["recovery_warning"] = UserError(
+                message=f"Размер сессии превышает лимит ({config.max_session_size} байт). Рассмотрите очистку старых сессий.",
+                severity=ErrorSeverity.WARNING,
+            ).to_dict()
+
+        # Add recovery warning if present in processing_state
+        error_dict = processing_state.get("error") if isinstance(processing_state, dict) else None
+        recovery_dict = processing_state.get("recovery_warning") if isinstance(processing_state, dict) else None
+        return _render_process_response(
+            request, response, session_state, processing_state,
+            processing_settings, thermogram_settings,
+            error=error_dict, recovery_warning=recovery_dict,
+        )
+    finally:
+        lock.release()

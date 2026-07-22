@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 
 import numpy as np
 import pandas as pd
@@ -106,3 +107,41 @@ def frame_to_parsed(name: str, frame: pd.DataFrame, content_type: str = "") -> P
             "rows_with_nan": n_nan,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Streaming (file-on-disk) parsers — Phase 5: no Base64, no full-RAM copy
+# ---------------------------------------------------------------------------
+
+
+def _read_frame_from_path(file_path: str) -> pd.DataFrame:
+    """Read CSV frame from file path directly (streaming)."""
+    if not os.path.exists(file_path):
+        return pd.DataFrame(columns=["temp", "deltatemp", "time", "mass"])
+    for separator in (",", ";", "\t", r"\s+"):
+        try:
+            frame = pd.read_csv(
+                file_path,
+                sep=separator,
+                header=None if separator == r"\s+" else "infer",
+            )
+            if len(frame.columns) > 1:
+                return _normalize_columns(frame)
+        except Exception:
+            continue
+    return pd.DataFrame(columns=["temp", "deltatemp", "time", "mass"])
+
+
+def parse_thermogram_from_file(file_path: str, filename: str) -> ThermogramFile:
+    """Parse a thermogram from a file on disk (streaming)."""
+    frame = _read_frame_from_path(file_path)
+    return ThermogramFile(name=filename, frame=frame, metadata={"content_type": "text/csv"})
+
+
+def parse_thermogram_uploads_streamed(temp_paths: list[tuple[str, str]]) -> list[ThermogramFile]:
+    """Parse multiple thermogram files from temporary paths (streaming).
+
+    Args:
+        temp_paths: list of (temp_file_path, original_filename) tuples
+    """
+    return [parse_thermogram_from_file(tp, fn) for tp, fn in temp_paths]

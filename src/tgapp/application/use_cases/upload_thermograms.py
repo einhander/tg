@@ -9,8 +9,9 @@ import pandas as pd
 
 from tgapp.application.dto import SessionStateDto, UploadPayload, UiMessage
 from tgapp.application.ports import SessionRepository, ThermogramParser
-from tgapp.domain.models import ParsedThermogram, ThermogramFile, ValidatedThermogram
+from tgapp.domain.models import ParsedThermogram, ThermogramFile, UploadedThermogramResult, ValidatedThermogram
 from tgapp.domain.validator import validate_parsed
+from tgapp.application._helpers import validated_to_df
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +24,6 @@ def create_session(storage: SessionRepository) -> SessionStateDto:
         status="created",
         messages=[asdict(UiMessage(text=f"Session created: {session_id}"))],
     )
-
-
-def _validated_to_df(v: ValidatedThermogram) -> pd.DataFrame:
-    """Convert ValidatedThermogram back to DataFrame for storage."""
-    data: dict[str, list[float]] = {
-        "temp": v.temp.tolist(),
-        "time": v.time.tolist(),
-        "mass": v.mass.tolist(),
-    }
-    if v.deltatemp is not None:
-        data["deltatemp"] = v.deltatemp.tolist()
-    return pd.DataFrame(data)
 
 
 def _require_session_id(session_state: dict[str, object], storage: SessionRepository) -> str:
@@ -62,16 +51,28 @@ def upload_thermograms(
 ) -> SessionStateDto:
     session_id = _require_session_id(session_state, storage)
     parsed_files = parser.parse_thermogram_uploads(uploads)
-    frames = {f"thermogram_{index + 1}.csv": item.frame for index, item in enumerate(parsed_files)}
-    filenames = storage.save_thermograms(session_id, frames)
-    storage.save_raw_thermograms(session_id, frames)
 
-    # New pipeline: DataFrame → ParsedThermogram → ValidatedThermogram → save validated frames
-    validated_frames: dict[str, object] = {}
+    # Track per-file validation results
+    file_results: list[UploadedThermogramResult] = []
+    validated_frames: dict[str, pd.DataFrame] = {}
+
     for index, parsed_file in enumerate(parsed_files):
         parsed = parser.frame_to_parsed(parsed_file.name, parsed_file.frame, parsed_file.metadata.get("content_type", ""))
-        if len(parsed.temp) == 0:
+        parsed_rows = len(parsed.temp) if parsed.temp is not None else 0
+
+        if parsed_rows == 0:
+            file_results.append(UploadedThermogramResult(
+                original_name=parsed_file.name,
+                accepted=False,
+                stored_name=None,
+                parsed_rows=0,
+                validated_rows=0,
+                rows_removed=0,
+                rows_interpolated=0,
+                errors=("Файл не содержит данных после парсинга.",),
+            ))
             continue
+
         try:
             validated = validate_parsed(parsed.temp, parsed.deltatemp, parsed.time, parsed.mass)
             validated = ValidatedThermogram(
@@ -82,30 +83,81 @@ def upload_thermograms(
                 mass=validated.mass,
                 metadata=validated.metadata,
             )
-            # Save validated frame as CSV for the process pipeline
-            validated_df = _validated_to_df(validated)
+            validated_df = validated_to_df(validated)
             validated_key = f"validated_thermogram_{index + 1}.csv"
             validated_frames[validated_key] = validated_df
+
+            file_results.append(UploadedThermogramResult(
+                original_name=parsed_file.name,
+                accepted=True,
+                stored_name=validated_key,
+                parsed_rows=parsed_rows,
+                validated_rows=len(validated.temp),
+                rows_removed=validated.metadata.get("rows_removed", 0),
+                rows_interpolated=validated.metadata.get("rows_interpolated", 0),
+                warnings=(),
+                errors=(),
+            ))
         except Exception as e:
             logger.warning("Validation failed for %s: %s", parsed_file.name, e)
-            continue
+            file_results.append(UploadedThermogramResult(
+                original_name=parsed_file.name,
+                accepted=False,
+                stored_name=None,
+                parsed_rows=parsed_rows,
+                validated_rows=0,
+                rows_removed=0,
+                rows_interpolated=0,
+                errors=(str(e),),
+            ))
 
-    if validated_frames:
-        storage.save_validated_thermograms(session_id, validated_frames)
+    # Save validated thermograms
+    storage.save_validated_thermograms(session_id, validated_frames)
 
+    # Calculate summary stats
+    accepted_count = sum(1 for r in file_results if r.accepted)
+    rejected_count = sum(1 for r in file_results if not r.accepted)
+
+    # Determine status
+    if accepted_count == 0:
+        status = "thermograms-not-accepted"
+    elif rejected_count > 0:
+        status = "thermograms-partially-loaded"
+    else:
+        status = "thermograms-loaded"
+
+    # Build metadata with per-file results
     metadata = {
         "original_names": [item.name for item in parsed_files],
-        "status": "thermograms-loaded",
+        "status": status,
+        "file_results": [asdict(r) for r in file_results],
+        "accepted_count": accepted_count,
+        "rejected_count": rejected_count,
     }
     storage.save_json(storage.metadata_path(session_id), metadata)
+
+    # Build user message
+    if accepted_count == 0:
+        msg = f"Загружено файлов: {len(parsed_files)}. Принято к обработке: 0. Отклонено: {rejected_count}."
+        for r in file_results:
+            if not r.accepted and r.errors:
+                msg += f"\n{r.original_name}: {r.errors[0]}"
+    elif rejected_count > 0:
+        msg = f"Загружено файлов: {len(parsed_files)}. Принято к обработке: {accepted_count}. Отклонено: {rejected_count}."
+        for r in file_results:
+            if not r.accepted and r.errors:
+                msg += f"\n{r.original_name}: {r.errors[0]}"
+    else:
+        msg = f"Загружено файлов: {len(parsed_files)}. Принято к обработке: {accepted_count}."
+
     return SessionStateDto(
         session_id=session_id,
         session_dir=str(storage.session_dir(session_id)),
-        thermogram_files=filenames,
+        thermogram_files=list(validated_frames.keys()) if validated_frames else [],
         correction_file=_optional_str(session_state.get("correction_file")) if isinstance(session_state, dict) else None,
         imported_archive=_optional_str(session_state.get("imported_archive")) if isinstance(session_state, dict) else None,
-        status="thermograms-loaded",
-        messages=[asdict(UiMessage(text=f"Loaded {len(parsed_files)} thermogram file(s)."))],
+        status=status,
+        messages=[asdict(UiMessage(text=msg))],
     )
 
 

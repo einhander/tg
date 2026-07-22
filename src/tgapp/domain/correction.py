@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-from typing import cast
-
 import numpy as np
 import pandas as pd
 
@@ -14,8 +11,6 @@ from tgapp.domain.models import (
     CorrectionRangeError,
     ThermogramValidationError,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def interpolate_correction_on_grid(
@@ -33,6 +28,7 @@ def interpolate_correction_on_grid(
 
     Raises:
         CorrectionRangeError: если correction не покрывает temperature_grid
+        ThermogramValidationError: если correction температура не монотонна после дедупа
     """
     if correction.frame.empty:
         raise CorrectionRangeError("Correction file is empty")
@@ -51,12 +47,26 @@ def interpolate_correction_on_grid(
     corr_temp = valid["temp"].to_numpy(dtype=float)
     corr_deltatemp = valid["deltatemp"].to_numpy(dtype=float)
 
-    # Проверить что температура коррекции монотонна
+    # Handle duplicate temperatures — keep first occurrence (deterministic)
+    unique_temp, unique_indices = np.unique(corr_temp, return_index=True)
+    if len(unique_indices) < len(corr_temp):
+        # Duplicates found — keep first occurrence of each temperature
+        corr_temp = unique_temp
+        corr_deltatemp = corr_deltatemp[unique_indices]
+        # Record in metadata (caller handles this)
+
+    # Проверить что температура коррекции монотонна — не сортируем молча
     if len(corr_temp) > 1 and not np.all(np.diff(corr_temp) > -1e-10):
-        # Попытаться отсортировать
-        sort_idx = np.argsort(corr_temp)
-        corr_temp = corr_temp[sort_idx]
-        corr_deltatemp = corr_deltatemp[sort_idx]
+        raise ThermogramValidationError(
+            f"Correction-файл содержит немонотонную температурную ось. "
+            f"Обнаружены обратные движения температуры."
+        )
+
+    # Check that temperature is strictly increasing after dedup
+    if len(corr_temp) > 1 and not np.all(np.diff(corr_temp) > 0):
+        raise ThermogramValidationError(
+            "Correction temperature is not strictly increasing after deduplication"
+        )
 
     # Проверить покрытие диапазона
     corr_tmin = corr_temp.min()
@@ -82,20 +92,18 @@ def apply_correction_to_aligned(
     aligned: list[AlignedThermogram],
     correction: CorrectionFile,
 ) -> list[AlignedThermogram]:
-    """Применить коррекцию к выровненным термограммам.
+    """Apply correction to aligned thermograms.
 
-    Correction применяется к deltatemp каждой термограммы на общей температурной сетке.
+    Raises CorrectionRangeError if correction cannot be applied.
+    Does NOT silently skip on errors.
     """
     if not aligned:
         return []
 
     temperature_grid = aligned[0].temperature_grid
 
-    try:
-        correction_deltatemp = interpolate_correction_on_grid(correction, temperature_grid)
-    except CorrectionRangeError as e:
-        logger.warning("Correction skipped: %s", e)
-        return aligned
+    # Let interpolate_correction_on_grid raise CorrectionRangeError
+    correction_deltatemp = interpolate_correction_on_grid(correction, temperature_grid)
 
     corrected = []
     for a in aligned:

@@ -1,10 +1,65 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# Processing settings validation constants
+# ---------------------------------------------------------------------------
+
+MIN_BINS = 50
+MAX_BINS = 100_000
+MAX_SG_WINDOW = 10_001
+MIN_SG_POLYORDER = 1
+MIN_PEAK_PROMINENCE_SIGMA = 0.01
+MIN_SPAN = 0.0
+MAX_SPAN = 100.0
+
+
+def validate_processing_settings(settings: ProcessingSettings) -> list[str]:
+    """Validate processing settings. Returns list of error messages.
+
+    Raises InvalidProcessingSettingsError on first invalid field.
+    """
+    errors = []
+
+    if settings.bins < MIN_BINS:
+        errors.append(f"bins ({settings.bins}) < {MIN_BINS}")
+    if settings.bins > MAX_BINS:
+        errors.append(f"bins ({settings.bins}) > {MAX_BINS}")
+
+    if settings.init_mass <= 0:
+        errors.append(f"init_mass ({settings.init_mass}) must be > 0")
+
+    if settings.sg_mode:
+        if settings.sg_window % 2 == 0:
+            errors.append(f"sg_window ({settings.sg_window}) must be odd")
+        if settings.sg_window < 3:
+            errors.append(f"sg_window ({settings.sg_window}) < 3")
+        if settings.sg_window > MAX_SG_WINDOW:
+            errors.append(f"sg_window ({settings.sg_window}) > {MAX_SG_WINDOW}")
+        if settings.sg_polyorder < MIN_SG_POLYORDER:
+            errors.append(f"sg_polyorder ({settings.sg_polyorder}) < {MIN_SG_POLYORDER}")
+        if settings.sg_window <= settings.sg_polyorder:
+            errors.append(f"sg_window ({settings.sg_window}) must be > sg_polyorder ({settings.sg_polyorder})")
+
+    if settings.peak_prominence_sigma <= 0:
+        errors.append(f"peak_prominence_sigma ({settings.peak_prominence_sigma}) must be > 0")
+
+    if settings.span < MIN_SPAN or settings.span > MAX_SPAN:
+        errors.append(f"span ({settings.span}) must be in [{MIN_SPAN}, {MAX_SPAN}]")
+
+    if errors:
+        raise InvalidProcessingSettingsError(
+            message="; ".join(errors),
+            details={"errors": errors},
+        )
+
+    return []
 
 
 @dataclass(slots=True)
@@ -27,6 +82,8 @@ class ProcessingSettings:
     init_mass: float = 1.0
     bins: int = 1000
     mass_smoothing: int = 1
+    # DEPRECATED: temp_smoothing is no longer used. Physical axes are never smoothed.
+    # NOTE: asdict() includes this field in serialization — low risk, accepted for backward compat.
     temp_smoothing: int = 1
     difflag: int = 1
     use_correction: bool = False
@@ -81,11 +138,31 @@ class ThermogramProcessed:
     temp_smoothed: pd.DataFrame = field(default_factory=pd.DataFrame)
     derivatives: pd.DataFrame = field(default_factory=pd.DataFrame)
     mean_frame: pd.DataFrame = field(default_factory=pd.DataFrame)
-    peaks: list[PeakResult] = field(default_factory=list)
+    peaks: tuple[PeakResult, ...] = field(default_factory=tuple)
     summary: SummaryResult = field(default_factory=SummaryResult)
     heat_speed_text: str = "Heat speed unavailable"
     adjusted_difflag: int = 1
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Upload validation result
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class UploadedThermogramResult:
+    """Per-file upload validation result."""
+
+    original_name: str
+    accepted: bool
+    stored_name: str | None
+    parsed_rows: int
+    validated_rows: int
+    rows_removed: int
+    rows_interpolated: int
+    warnings: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +196,10 @@ class CorrectionRangeError(ThermogramValidationError):
 
 class InvalidProcessingSettingsError(ThermogramValidationError):
     """Некорректные параметры обработки."""
+
+
+class DerivativeCalculationError(ThermogramValidationError):
+    """Ошибка расчёта производной."""
 
 
 @dataclass(slots=True, frozen=True)
