@@ -1,14 +1,5 @@
 (function () {
-  var plotResizeObserver = typeof ResizeObserver === "undefined"
-    ? null
-    : new ResizeObserver(function (entries) {
-        entries.forEach(function (entry) {
-          var plot = entry.target.classList.contains("main-plot")
-            ? entry.target
-            : entry.target.querySelector(".main-plot");
-          resizePlot(plot);
-        });
-      });
+  var plotObservers = new WeakMap();
 
   function parsePlotJson(raw) {
     if (!raw) {
@@ -47,26 +38,186 @@
     return null;
   }
 
-  function renderPlot(element) {
-    if (!element || typeof Plotly === "undefined") {
-      return Promise.resolve();
+  var plotRenderQueue = new WeakMap();
+  var plotRenderCount = new WeakMap();
+  var scheduledPlots = new WeakSet();
+
+  function incrementRenderCount(plot) {
+    var count = (plotRenderCount.get(plot) || 0) + 1;
+    plotRenderCount.set(plot, count);
+    console.debug("Plot render count:", count, plot);
+  }
+
+  function queuePlotRender(plot) {
+    var previous = plotRenderQueue.get(plot) || Promise.resolve();
+
+    var next = previous
+        .catch(function (error) {
+            console.error("Previous Plotly render failed:", error);
+        })
+        .then(function () {
+            if (plot._renderFailed) return;
+            if (!plot.isConnected) {
+                return false;
+            }
+            return waitForPlotSize(plot);
+        })
+        .then(function (hasSize) {
+            if (!hasSize || !plot.isConnected) {
+                return false;
+            }
+            return renderPlot(plot).then(function () {
+                return true;
+            });
+        })
+        .then(function (rendered) {
+            if (!rendered || !plot.isConnected) {
+                return false;
+            }
+            return nextAnimationFrame().then(function () {
+                return true;
+            });
+        })
+        .then(function (rendered) {
+            if (!rendered || !plot.isConnected || !plot.classList.contains("js-plotly-plot")) {
+                return;
+            }
+            return Plotly.Plots.resize(plot);
+        })
+        .catch(function (error) {
+            if (error.message === "Plot payload is missing") {
+                plot._renderFailed = true;
+                showPlotError(plot);
+                return;
+            }
+            console.error("Plotly render failed:", error);
+            showPlotError(plot);
+        });
+
+    plotRenderQueue.set(plot, next);
+    return next;
+  }
+
+  function schedulePlotRender(plot) {
+    if (scheduledPlots.has(plot)) {
+      return;
     }
 
-    var payload = parsePlotJson(element.getAttribute("data-plot-json"));
-    var figure = normalizeFigure(payload);
-    if (!figure) {
-      element.innerHTML = "";
-      return Promise.resolve();
+    scheduledPlots.add(plot);
+
+    queueMicrotask(function () {
+      scheduledPlots.delete(plot);
+      queuePlotRender(plot);
+    });
+  }
+
+  function waitForPlotSize(plot, attempts) {
+    var remaining = typeof attempts === "number" ? attempts : 30;
+
+    if (!plot.isConnected) {
+        return Promise.resolve(false);
     }
 
-    var layout = Object.assign({}, figure.layout || {});
-    var config = Object.assign({responsive: true}, figure.config || {});
-
-    if (element.classList.contains("js-plotly-plot")) {
-      return Plotly.react(element, figure.data || [], layout, config);
+    if (isPlotVisible(plot)) {
+        return Promise.resolve(true);
     }
 
-    return Plotly.newPlot(element, figure.data || [], layout, config);
+    if (remaining <= 0) {
+        return Promise.resolve(false);
+    }
+
+    return nextAnimationFrame().then(function () {
+        return waitForPlotSize(plot, remaining - 1);
+    });
+  }
+
+  function nextAnimationFrame() {
+    return new Promise(function (resolve) {
+      requestAnimationFrame(function () { requestAnimationFrame(resolve); });
+    });
+  }
+
+  function isPlotVisible(plot) {
+    if (!plot || !plot.isConnected) {
+        return false;
+    }
+
+    var rect = plot.getBoundingClientRect();
+
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function readPlotPayload(plot) {
+    if (!plot) return null;
+    var raw = plot.getAttribute("data-plot-json");
+    if (!raw) return null;
+    return normalizeFigure(parsePlotJson(raw));
+  }
+
+  function showPlotError(plot) {
+    if (!plot) return;
+    plot.classList.add("plot-error");
+    var errorDiv = document.createElement("div");
+    errorDiv.className = "plot-error-message";
+    errorDiv.textContent = "Ошибка отрисовки графика. Проверьте консоль.";
+    plot.appendChild(errorDiv);
+  }
+
+  function observePlot(plot) {
+    if (!plot || !plotObservers.has(plot)) {
+        var observer = new ResizeObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!plot.isConnected || !plot.classList.contains("js-plotly-plot")) {
+                    return;
+                }
+                Plotly.Plots.resize(plot).catch(function (error) {
+                    console.error("Plotly resize failed:", error);
+                });
+            });
+        });
+        observer.observe(plot);
+        plotObservers.set(plot, observer);
+    }
+  }
+
+  function disconnectPlotObserver(plot) {
+    var observer = plotObservers.get(plot);
+    if (!observer) return;
+    observer.disconnect();
+    plotObservers.delete(plot);
+  }
+
+  function renderPlot(plot) {
+    // Remove previous error indicator if present
+    var existingError = plot.querySelector(".plot-error-message");
+    if (existingError) existingError.remove();
+
+    var payload = readPlotPayload(plot);
+
+    if (!payload) {
+        return Promise.reject(new Error("Plot payload is missing"));
+    }
+
+    incrementRenderCount(plot);
+
+    var data = payload.data || [];
+    var layout = payload.layout || {};
+    var config = payload.config || {};
+
+    console.debug("Rendering plot", {
+        connected: plot.isConnected,
+        width: plot.getBoundingClientRect().width,
+        height: plot.getBoundingClientRect().height,
+        hasXAxisTitle: Boolean(layout.xaxis?.title),
+        hasYAxisTitle: Boolean(layout.yaxis?.title),
+        hasLegend: Boolean(layout.legend)
+    });
+
+    if (plot.classList.contains("js-plotly-plot")) {
+        return Plotly.react(plot, data, layout, config);
+    }
+
+    return Plotly.newPlot(plot, data, layout, config);
   }
 
   function resizePlot(element) {
@@ -120,59 +271,11 @@
     return plots;
   }
 
-  function scheduleAfterLayout(callback) {
-    window.requestAnimationFrame(function () {
-      window.requestAnimationFrame(callback);
+  function initPlots(root) {
+    collectPlots(root).forEach(function (plot) {
+      observePlot(plot);
+      schedulePlotRender(plot);
     });
-  }
-
-  function schedulePlotUpdate(plots) {
-    if (!plots.length) {
-      return;
-    }
-
-    scheduleAfterLayout(function () {
-      plots.forEach(function (plot) {
-        Promise.resolve(renderPlot(plot)).then(function () {
-          resizePlot(plot);
-        });
-      });
-    });
-  }
-
-  function observePlotContainers(root) {
-    if (!plotResizeObserver) {
-      return;
-    }
-
-    var scope = root || document;
-    var plots = [];
-
-    if (scope.classList && scope.classList.contains("main-plot")) {
-      plots.push(scope);
-    }
-
-    if (scope.querySelectorAll) {
-      scope.querySelectorAll(".main-plot").forEach(function (plot) {
-        plots.push(plot);
-      });
-    }
-
-    plots.forEach(function (plot) {
-      if (plot.dataset.resizeObserved === "1") {
-        return;
-      }
-
-      plot.dataset.resizeObserved = "1";
-      plotResizeObserver.observe(plot);
-      if (plot.parentElement) {
-        plotResizeObserver.observe(plot.parentElement);
-      }
-    });
-  }
-
-  function renderPlots(root) {
-    schedulePlotUpdate(collectPlots(root));
   }
 
   function bindTabs(root) {
@@ -297,8 +400,7 @@
     bindRangeControls(root);
     bindSgToggle(root);
     bindVisibilityToggles(root);
-    renderPlots(root);
-    observePlotContainers(root);
+    initPlots(root);
   }
 
   function getPostSwapRoot(event) {
@@ -312,12 +414,6 @@
   function handlePostSwap(event) {
     var root = getPostSwapRoot(event);
     init(root);
-
-    var target = event.detail && event.detail.target ? event.detail.target : null;
-    if (target && target !== root) {
-      schedulePlotUpdate(collectPlots(target));
-      observePlotContainers(target);
-    }
   }
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -326,6 +422,33 @@
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     handlePostSwap(event);
+  });
+
+  document.body.addEventListener("htmx:oobAfterSwap", function (event) {
+    var root = event.detail && event.detail.elt ? event.detail.elt : event.target;
+    if (root) init(root);
+  });
+
+  document.body.addEventListener("htmx:beforeCleanupElement", function (event) {
+    var elt = event.detail && event.detail.elt ? event.detail.elt : event.target;
+    if (!elt) return;
+
+    var plots = [];
+
+    if (elt.matches && elt.matches(".js-plotly-plot")) {
+        plots.push(elt);
+    }
+
+    if (elt.querySelectorAll) {
+        elt.querySelectorAll(".js-plotly-plot").forEach(function (plot) {
+            plots.push(plot);
+        });
+    }
+
+    plots.forEach(function (plot) {
+        disconnectPlotObserver(plot);
+        try { Plotly.purge(plot); } catch (e) {}
+    });
   });
 
   window.addEventListener("resize", function () {
