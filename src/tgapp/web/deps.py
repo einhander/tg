@@ -3,13 +3,14 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import Request, Response
+from fastapi import HTTPException, Request, Response
 
 from tgapp.application.session_state import create_default_processing_state, create_default_session_state
 from tgapp.application.use_cases import create_session
 from tgapp.config import AppConfig
 from tgapp.domain.models import ThermogramViewSettings
 from tgapp.infrastructure.storage import SessionStorage, validate_session_id
+from tgapp.infrastructure.kinetics.repository import KineticStudyRepository
 
 SESSION_COOKIE_NAME = "tgapp_session_id"
 
@@ -166,3 +167,14 @@ def save_thermogram_settings(request: Request, session_state: dict[str, Any], se
     storage = get_storage(request)
     unified_path = storage.thermogram_settings_path(session_id)
     storage.save_json(unified_path, settings)
+
+
+def get_kinetics_repo(request: Request) -> KineticStudyRepository:
+    """Get the kinetics study repository for the current session."""
+    storage = get_storage(request)
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not isinstance(session_id, str) or not session_id:
+        raise HTTPException(status_code=400, detail="No active session")
+    kinetics_dir = storage.session_dir(session_id) / "kinetics"
+    kinetics_dir.mkdir(parents=True, exist_ok=True)
+    return KineticStudyRepository(kinetics_dir)

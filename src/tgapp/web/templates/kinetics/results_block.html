@@ -1,0 +1,32 @@
+<div class="card">
+  <div class="card-header">
+    <h6 class="mb-0">Результаты OFW</h6>
+  </div>
+  <div class="card-body">
+    <div id="analysis-summary" class="mb-3">
+      <p><strong>Метод:</strong> {{ result.method_id if result else "—" }}</p>
+      <p><strong>Средняя E<sub>α</sub>:</strong> {{ result.mean_activation_energy_j_mol / 1000 if result and result.mean_activation_energy_j_mol else "—" }} kJ/mol</p>
+      <p><strong>Медианная E<sub>α</sub>:</strong> {{ result.median_activation_energy_j_mol / 1000 if result and result.median_activation_energy_j_mol else "—" }} kJ/mol</p>
+    </div>
+
+    <div id="plot-e-alpha" style="height:500px;"></div>
+
+    <div id="analysis-table" class="mt-3">
+      <table class="table table-sm table-striped">
+        <thead>
+          <tr>
+            <th>α</th>
+            <th>E<sub>α</sub> (kJ/mol)</th>
+            <th>R²</th>
+            <th>Ошибки</th>
+            <th>Статус</th>
+            <th>Предупреждения</th>
+          </tr>
+        </thead>
+        <tbody id="results-tbody">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

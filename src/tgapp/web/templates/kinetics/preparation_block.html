@@ -1,0 +1,37 @@
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <h6 class="mb-0">Подготовка данных</h6>
+    <button type="button" class="btn btn-sm btn-primary" onclick="kineticsApp.runAnalysis()">Рассчитать OFW</button>
+  </div>
+  <div class="card-body">
+    <div id="study-checklist" class="checklist mb-3">
+      <!-- Populated by JS -->
+    </div>
+
+    <div id="study-runs-table">
+      <table class="table table-sm table-striped">
+        <thead>
+          <tr>
+            <th>Файл</th>
+            <th>Номинальная β</th>
+            <th>Измеренная β</th>
+            <th>R² нагрева</th>
+            <th>Диапазон T</th>
+            <th>m₀</th>
+            <th>mf</th>
+            <th>Потеря массы</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody id="runs-tbody">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+
+    <div id="study-plots" class="mt-3">
+      <div id="plot-mass-temp" style="height:400px;"></div>
+      <div id="plot-alpha-temp" class="mt-3" style="height:400px;"></div>
+    </div>
+  </div>
+</div>

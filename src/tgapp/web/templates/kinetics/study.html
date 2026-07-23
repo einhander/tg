@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Исследование: {{ study.name }} — {{ super() }}{% endblock %}
+
+{% block content %}
+<div id="kinetics-study-app">
+  <nav class="breadcrumb mb-3">
+    <a href="/kinetics">Кинетический анализ</a>
+    <span class="breadcrumb-separator">/</span>
+    <span>{{ study.name }}</span>
+  </nav>
+
+  <div class="card mb-3">
+    <div class="card-header">
+      <h5 class="mb-0">{{ study.name }}</h5>
+    </div>
+    <div class="card-body">
+      <p><strong>Проба:</strong> {{ study.sample_name or "—" }}</p>
+      <p><strong>Атмосфера:</strong> {{ study.atmosphere or "—" }}</p>
+      <p><strong>Опытов:</strong> {{ study.runs|length }} включённых</p>
+    </div>
+  </div>
+
+  <div id="study-preparation" class="kinetics-section">
+    {% include "kinetics/preparation_block.html" %}
+  </div>
+
+  <div id="study-results" class="kinetics-section" style="display:none;">
+    {% include "kinetics/results_block.html" %}
+  </div>
+
+  <div id="study-regression" class="kinetics-section" style="display:none;">
+    {% include "kinetics/regression_block.html" %}
+  </div>
+</div>
+{% endblock %}

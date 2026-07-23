@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Кинетический анализ — {{ super() }}{% endblock %}
+
+{% block content %}
+<div id="kinetics-app">
+  <h2>Кинетический анализ</h2>
+  <p class="text-muted">Определение зависимости E<sub>α</sub> от степени превращения α методом изоконверсионного анализа.</p>
+
+  <div class="btn-group mb-3" role="group">
+    <button type="button" class="btn btn-outline-primary" onclick="kineticsApp.showPreparation()">Подготовка</button>
+    <button type="button" class="btn btn-outline-primary" onclick="kineticsApp.showResults()">Результаты</button>
+  </div>
+
+  <div id="kinetics-preparation" class="kinetics-section">
+    {% include "kinetics/preparation_block.html" %}
+  </div>
+
+  <div id="kinetics-results" class="kinetics-section" style="display:none;">
+    {% include "kinetics/results_block.html" %}
+  </div>
+</div>
+{% endblock %}

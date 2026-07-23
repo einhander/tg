@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import csv
+import io
+import json
 import shutil
 import tempfile
 from dataclasses import asdict
@@ -11,7 +14,7 @@ from fastapi.responses import PlainTextResponse, Response
 from tgapp.application.ports import SessionArchiveService, SessionRepository
 from tgapp.application.use_cases import export_session
 from tgapp.application.error_responses import archive_corrupted, UserError
-from tgapp.web.deps import get_config, get_or_create_session_state, get_processing_state, get_storage
+from tgapp.web.deps import get_config, get_or_create_session_state, get_processing_state, get_storage, get_kinetics_repo
 
 router = APIRouter(prefix="/export")
 
@@ -81,3 +84,72 @@ def export_session_route(request: Request, response: Response):
 @router.get("/plot", name="export_plot")
 def export_plot():
     return PlainTextResponse("Plot export is not implemented yet.", status_code=501)
+
+
+# ---------------------------------------------------------------------------
+# Kinetics export endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/kinetics/studies/{study_id}/analyses/{analysis_id}/csv", name="export_kinetics_csv")
+def export_kinetics_csv(request: Request, study_id: str, analysis_id: str):
+    """Export kinetics analysis result as CSV."""
+    repo = get_kinetics_repo(request)
+    try:
+        result_data = repo.load_analysis(study_id, analysis_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Analysis {analysis_id} not found")
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "alpha",
+        "activation_energy_kj_mol",
+        "method_id",
+        "method_version",
+        "slope",
+        "intercept",
+        "r_squared",
+        "slope_standard_error",
+        "run_count",
+        "status",
+        "warnings",
+    ])
+
+    for p in result_data.get("points", []):
+        e_kj = p["activation_energy_j_mol"] / 1000 if p["activation_energy_j_mol"] is not None else ""
+        writer.writerow([
+            p["alpha"],
+            e_kj,
+            result_data.get("method_id", ""),
+            result_data.get("method_version", ""),
+            p["slope"],
+            p["intercept"],
+            p["r_squared"],
+            p["slope_standard_error"],
+            len(p.get("run_ids", [])),
+            p["status"],
+            "; ".join(p.get("warnings", [])) if p.get("warnings") else "",
+        ])
+
+    output.seek(0)
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=kinetics_{analysis_id}.csv"},
+    )
+
+
+@router.get("/kinetics/studies/{study_id}/analyses/{analysis_id}/json", name="export_kinetics_json")
+def export_kinetics_json(request: Request, study_id: str, analysis_id: str):
+    """Export full kinetics analysis result as JSON."""
+    repo = get_kinetics_repo(request)
+    try:
+        result_data = repo.load_analysis(study_id, analysis_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Analysis {analysis_id} not found")
+
+    return Response(
+        content=json.dumps(result_data, indent=2, ensure_ascii=False),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename=kinetics_{analysis_id}.json"},
+    )
