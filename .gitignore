@@ -21,3 +21,5 @@ uv.lock
 # Misc
 *.png
 *.log
+
+PLAN*.md
