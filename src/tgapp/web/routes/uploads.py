@@ -171,7 +171,11 @@ def _get_visible_thermogram_plot_json(storage, session_state, settings):
         if thermograms:
             frame = next(iter(thermograms.values()))
         else:
-            return figure_to_json(build_raw_plot(__import__("pandas").DataFrame(), settings))
+            validated = storage.load_validated_thermograms(session_id)
+            if validated:
+                frame = next(iter(validated.values()))
+            else:
+                return figure_to_json(build_raw_plot(__import__("pandas").DataFrame(), settings))
     return figure_to_json(build_raw_plot(frame, settings))
 
 

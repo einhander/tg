@@ -148,13 +148,20 @@ def _load_raw_plot_frame(storage, session_state):
     session_id = session_state.get("session_id") if isinstance(session_state, dict) else None
     if not isinstance(session_id, str) or not session_id:
         return __import__("pandas").DataFrame()
+    pd = __import__("pandas")
     raw_thermograms = storage.load_raw_thermograms(session_id)
     if raw_thermograms:
         return next(iter(raw_thermograms.values()))
     thermograms = storage.load_thermograms(session_id)
     if thermograms:
         return next(iter(thermograms.values()))
-    return __import__("pandas").DataFrame()
+    validated = storage.load_validated_thermograms(session_id)
+    if validated:
+        return next(iter(validated.values()))
+    plot_path = storage.raw_plot_path(session_id)
+    if plot_path.exists():
+        return pd.read_csv(plot_path)
+    return pd.DataFrame()
 
 
 @router.post("/process", name="process")

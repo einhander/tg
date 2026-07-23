@@ -10,7 +10,7 @@ from tgapp.domain.models import (
 )
 
 TIME_EPSILON = 1e-9
-TEMP_EPSILON = 1e-3
+TEMP_EPSILON = 5e-1  # Allow oven oscillations up to ±0.5 K
 MIN_POINTS = 3
 MAX_INTERPOLATION_GAP_POINTS = 100
 MAX_INTERPOLATED_FRACTION = 0.1

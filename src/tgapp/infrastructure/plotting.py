@@ -197,7 +197,7 @@ def build_main_plot(payload: PlotPayload) -> go.Figure:
         xaxis={"gridcolor": "#e5e7eb", "zerolinecolor": "#d1d5db"},
         yaxis={"gridcolor": "#e5e7eb", "zerolinecolor": "#d1d5db"},
         yaxis2=yaxis2_cfg,
-        legend={"x": 0.02, "y": 0.02, "xanchor": "left", "yanchor": "bottom", "bgcolor": "rgba(255,255,255,0.8)", "bordercolor": "#e5e7eb", "borderwidth": 1},
+        legend={"x": 0.02, "y": 0.1, "xanchor": "left", "yanchor": "bottom", "bgcolor": "rgba(255,255,255,0.8)", "bordercolor": "#e5e7eb", "borderwidth": 1},
         plot_bgcolor="white",
         paper_bgcolor="white",
     )

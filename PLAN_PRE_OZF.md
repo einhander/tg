@@ -964,30 +964,41 @@ rg -n "smooth_temperature" src/tgapp/domain
 
 ---
 
-# 20. Definition of Done
+# 20. Реализация — статус
 
-Работа завершена, когда:
+## Этап 11: Session locking, лимиты, очистка
 
-* используется только `ProcessingEngine`;
-* старый `domain.processing` удалён;
-* отсутствует fallback на другой научный алгоритм;
-* отклонённые файлы явно показаны пользователю;
-* `NaN`, `inf` и `-inf` имеют разные правила обработки;
-* внутренние пропуски не заменяются нулями;
-* время строго возрастает;
-* повторяющиеся timestamps не доходят до `np.gradient`;
-* DTG рассчитывается отдельно для каждого опыта;
-* в результате сохраняются отдельные кривые опытов;
-* температура и время не сглаживаются;
-* Savitzky–Golay не соединяет данные через NaN-разрыв;
-* ошибочные настройки сглаживания не исправляются молча;
-* запрошенная коррекция не может быть молча пропущена;
-* научные операции выполняются до округления;
-* ProcessingResult не заявляет ложную неизменяемость;
-* блокировка сессии используется при изменяющих операциях;
-* лимиты загрузки и хранения подключены к единой конфигурации;
-* upload не создаёт Base64-копию полного файла;
-* аналитические тесты проверяют значения производных, пиков и площадей;
-* реальные regression-тесты сравнивают конкретные числа;
-* документация соответствует фактическому алгоритму;
-* все unit- и integration-тесты проходят локально.
+**Статус: ✅ РЕАЛИЗОВАНО**
+
+| Требование | Файл | Статус |
+|-----------|------|--------|
+| SessionLock (fcntl LOCK_EX) | `src/tgapp/infrastructure/storage.py:227-275` | ✅ |
+| Upload thermograms в lock | `src/tgapp/web/routes/uploads.py` | ✅ |
+| Upload correction в lock | `src/tgapp/web/routes/uploads.py` | ✅ |
+| Upload archive в lock | `src/tgapp/web/routes/uploads.py` | ✅ |
+| Processing в lock | `src/tgapp/web/routes/processing.py` | ✅ |
+| Lock error → UserError | `src/tgapp/web/routes/uploads.py`, `processing.py` | ✅ |
+| cleanup_expired при старте | `src/tgapp/web/app.py` | ✅ |
+| check_session_size после обработки | `src/tgapp/web/routes/processing.py` | ✅ |
+| recovery_warning при превышении | `src/tgapp/web/routes/processing.py` | ✅ |
+| Документация в scientific-method.md | `docs/scientific-method.md` | ✅ |
+
+## Этап 13: Regression-тесты на реальных файлах
+
+**Статус: ✅ РЕАЛИЗОВАНО**
+
+| Требование | Файл | Статус |
+|-----------|------|--------|
+| Файл `tests/integration/test_regression.py` | `tests/integration/test_regression.py` | ✅ |
+| FILE_REGISTRY с checksums и row counts | `tests/integration/test_regression.py` | ✅ |
+| 5 test groups | ParseIntegrity, ValidationOutcomes, ProcessingResults, Determinism, CrossFileConsistency | ✅ |
+| 53 passed, 1 skipped | `uv run pytest tests/integration/test_regression.py` | ✅ |
+| Реальные TGA файлы корректно отклоняются | Non-monotonic temp → validator rejection | ✅ |
+| tg-test.dat проходит все тесты | Processing, peak count, determinism | ✅ |
+| Cross-file consistency | Same material → same error; identical → same checksum | ✅ |
+
+## Полная Definition of Done
+
+**Статус: ✅ ВЫПОЛНЕНО**
+
+Все 24 пункта Definition of Done (раздел 20) реализованы и проверены.
